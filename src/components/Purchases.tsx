@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ChevronDown, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench, Download, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
+import { ChevronDown, Copy, Edit, MoreHorizontal, Camera, RefreshCw, Mail, Trash2, Settings, Plus, Shield, Wrench, Download, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
 import { useTheme } from '../lib/contexts/ThemeContext';
 import { useAuth } from '../lib/contexts/AuthContext';
 import { addDocument, getDocuments, updateDocument, deleteDocument, subscribeToCollection } from '../lib/firebase/firebaseUtils';
@@ -5437,9 +5437,22 @@ const Purchases = () => {
                         if (!trimmed) return <span className={`text-sm ${currentTheme.colors.textSecondary}`}>-</span>;
                         const short = trimmed.length <= 18 ? trimmed : `${trimmed.slice(0, 8)}…${trimmed.slice(-8)}`;
                         return (
-                          <span className={`text-sm font-mono ${currentTheme.colors.textPrimary}`} title={trimmed}>
-                            {short}
-                          </span>
+                          <div className="flex items-center justify-center gap-1">
+                            <span className={`text-sm font-mono ${currentTheme.colors.textPrimary}`} title={trimmed}>
+                              {short}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(trimmed).catch(() => {});
+                              }}
+                              className={`p-1 rounded ${currentTheme.name === 'Neon' ? 'hover:bg-white/10 text-gray-400 hover:text-cyan-400' : 'hover:bg-gray-100 text-gray-500 hover:text-blue-600'}`}
+                              title="Copy StockX QR"
+                              aria-label="Copy StockX QR"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         );
                       })()}
                     </div>

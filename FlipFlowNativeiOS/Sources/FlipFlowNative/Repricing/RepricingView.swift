@@ -109,7 +109,7 @@ private struct RepricingScreen: View {
     "All",
     "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5",
     "10", "10.5", "11", "11.5", "12", "12.5", "13", "14",
-    "S", "M", "L", "XL", "XXL",
+    "XS", "S", "M", "L", "XL", "XXL",
   ]
 
   private func normalizedSize(_ size: String) -> String {
@@ -491,6 +491,20 @@ private struct RepricingScreen: View {
 
   private var statsAndListSection: some View {
     VStack(alignment: .leading, spacing: 12) {
+      if let last = vm.lastMarketDataFetchedAt {
+        let minAgo = max(0, Int(-last.timeIntervalSinceNow / 60))
+        Text("Market: \(minAgo == 0 ? "just now" : "\(minAgo) min ago")")
+          .font(.caption2)
+          .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
+      }
+      if let msg = vm.marketDataErrorMessage, !msg.isEmpty {
+        Text(msg)
+          .font(.caption2)
+          .foregroundStyle(.orange)
+      }
+      sizeFilterSection
+      notWinningBuyboxFilter
+      searchAndSortBar
       HStack(spacing: 8) {
         Button {
           UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -512,23 +526,9 @@ private struct RepricingScreen: View {
           .font(.subheadline.weight(.medium))
           .foregroundStyle(NeonTheme.textSecondary)
       }
-      if let last = vm.lastMarketDataFetchedAt {
-        let minAgo = max(0, Int(-last.timeIntervalSinceNow / 60))
-        Text("Market: \(minAgo == 0 ? "just now" : "\(minAgo) min ago")")
-          .font(.caption2)
-          .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
-      }
-      if let msg = vm.marketDataErrorMessage, !msg.isEmpty {
-        Text(msg)
-          .font(.caption2)
-          .foregroundStyle(.orange)
-      }
       if isSelectionMode && !selectedListingIds.isEmpty {
         batchApplyBar
       }
-      sizeFilterSection
-      notWinningBuyboxFilter
-      searchAndSortBar
       if showSortMenu {
         sortMenuInlineContent
       }
@@ -1047,7 +1047,10 @@ private struct RepricingRowView: View {
             .font(.system(size: 10))
           Text("Lowest")
             .font(.caption2.weight(.medium))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         }
+        .fixedSize(horizontal: true, vertical: false)
         .foregroundStyle(NeonTheme.accentCyan)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1058,7 +1061,10 @@ private struct RepricingRowView: View {
             .font(.system(size: 9))
           Text("Grouped")
             .font(.caption2.weight(.medium))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         }
+        .fixedSize(horizontal: true, vertical: false)
         .foregroundStyle(NeonTheme.textSecondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

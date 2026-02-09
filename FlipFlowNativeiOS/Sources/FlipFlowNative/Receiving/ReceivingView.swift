@@ -69,18 +69,25 @@ private struct ReceivingScreen: View {
     NeonScreen { screenContent }
       .overlay(alignment: .top) {
         if let message = vm.banner, !message.isEmpty {
-          NeonToast(message: message, kind: toastKind(for: message)) {
-            bannerDismissWorkItem?.cancel()
-            bannerDismissWorkItem = nil
-            withAnimation(.easeInOut(duration: 0.18)) {
-              vm.banner = nil
+          let isStockxQrToast = message.hasPrefix("Captured StockX QR") && !vm.stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          NeonToast(
+            message: message,
+            kind: toastKind(for: message),
+            copyPayload: isStockxQrToast ? vm.stockxUnitQrRaw : nil,
+            onDismiss: {
+              bannerDismissWorkItem?.cancel()
+              bannerDismissWorkItem = nil
+              withAnimation(.easeInOut(duration: 0.18)) {
+                vm.banner = nil
+              }
             }
-          }
+          )
           .padding(.top, 10)
           .padding(.horizontal, 14)
           .transition(.move(edge: .top).combined(with: .opacity))
           .onAppear {
             bannerDismissWorkItem?.cancel()
+            guard !isStockxQrToast else { return }
             let work = DispatchWorkItem {
               Task { @MainActor in
                 withAnimation(.easeInOut(duration: 0.18)) {
@@ -436,17 +443,41 @@ private struct ReceivingScreen: View {
           .buttonStyle(NeonPrimaryButtonStyle())
 
           if !vm.stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text("Captured: \(vm.stockxUnitQrRaw)")
-              .font(.caption2)
-              .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
-              .lineLimit(2)
+            HStack(alignment: .top, spacing: 8) {
+              Text("Captured: \(vm.stockxUnitQrRaw)")
+                .font(.caption2)
+                .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+                .lineLimit(2)
+              Button {
+                UIPasteboard.general.string = vm.stockxUnitQrRaw
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+              } label: {
+                Text("Copy")
+                  .font(.caption.weight(.semibold))
+                  .foregroundStyle(NeonTheme.accentCyan)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel("Copy StockX QR to clipboard")
+            }
           }
         } else {
           if vm.isStep2Complete {
-            Text("Captured: \(vm.stockxUnitQrRaw)")
-              .font(.caption)
-              .foregroundStyle(NeonTheme.textSecondary)
-              .lineLimit(1)
+            HStack(spacing: 6) {
+              Text("Captured: \(vm.stockxUnitQrRaw)")
+                .font(.caption)
+                .foregroundStyle(NeonTheme.textSecondary)
+                .lineLimit(1)
+              Button {
+                UIPasteboard.general.string = vm.stockxUnitQrRaw
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+              } label: {
+                Image(systemName: "doc.on.doc")
+                  .font(.system(size: 12))
+                  .foregroundStyle(NeonTheme.accentCyan)
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel("Copy StockX QR to clipboard")
+            }
           } else {
             Text("Not scanned yet.")
               .font(.caption)
@@ -814,6 +845,7 @@ private struct NeonToast: View {
 
   let message: String
   let kind: Kind
+  var copyPayload: String? = nil
   let onDismiss: () -> Void
 
   private var iconName: String {
@@ -844,6 +876,26 @@ private struct NeonToast: View {
         .multilineTextAlignment(.leading)
 
       Spacer(minLength: 10)
+
+      if let payload = copyPayload, !payload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        Button {
+          UIPasteboard.general.string = payload
+          UIImpactFeedbackGenerator(style: .light).impactOccurred()
+          onDismiss()
+        } label: {
+          HStack(spacing: 4) {
+            Image(systemName: "doc.on.doc")
+            Text("Copy")
+              .font(.subheadline.weight(.semibold))
+          }
+          .foregroundStyle(NeonTheme.accentCyan)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 8)
+          .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Copy StockX QR to clipboard")
+      }
 
       Button(action: onDismiss) {
         Image(systemName: "xmark")
@@ -901,10 +953,22 @@ private struct ProcessedLogRow: View {
         .lineLimit(1)
 
         if let stockx = entry.stockxUnitQrRaw, !stockx.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          Text("StockX: \(stockx)")
-            .font(.caption2)
-            .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
-            .lineLimit(1)
+          HStack(spacing: 4) {
+            Text("StockX: \(stockx)")
+              .font(.caption2)
+              .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+              .lineLimit(1)
+            Button {
+              UIPasteboard.general.string = stockx
+              UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+              Image(systemName: "doc.on.doc")
+                .font(.system(size: 10))
+                .foregroundStyle(NeonTheme.accentCyan)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy StockX QR to clipboard")
+          }
         }
 
         Text("Auth: \(authLabel)")

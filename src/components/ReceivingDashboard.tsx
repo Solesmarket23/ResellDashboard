@@ -706,14 +706,38 @@ export default function ReceivingDashboard() {
                   </div>
 
                   <label className={`block text-xs font-medium ${currentTheme.colors.textSecondary} mb-1`}>QR payload</label>
-                  <input
-                    value={stockxQrRaw}
-                    onChange={(e) => setStockxQrRaw(e.target.value)}
-                    placeholder="Scan StockX QR code and store the raw payload"
-                    className={`w-full px-3 py-2 rounded-xl border ${currentTheme.colors.border} ${
-                      currentTheme.name === 'Neon' ? 'bg-black/20 text-white placeholder:text-gray-400' : 'bg-white text-gray-900'
-                    } text-sm font-mono`}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={stockxQrRaw}
+                      onChange={(e) => setStockxQrRaw(e.target.value)}
+                      placeholder="Scan StockX QR code and store the raw payload"
+                      className={`flex-1 min-w-0 px-3 py-2 rounded-xl border ${currentTheme.colors.border} ${
+                        currentTheme.name === 'Neon' ? 'bg-black/20 text-white placeholder:text-gray-400' : 'bg-white text-gray-900'
+                      } text-sm font-mono`}
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!stockxQrRaw.trim()) return;
+                        try {
+                          await navigator.clipboard.writeText(stockxQrRaw.trim());
+                          // optional: toast or brief "Copied" state
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      disabled={!stockxQrRaw.trim()}
+                      className={`shrink-0 px-3 py-2 rounded-xl border ${currentTheme.colors.border} flex items-center gap-1.5 font-medium text-sm ${
+                        currentTheme.name === 'Neon'
+                          ? 'bg-white/10 text-cyan-300 hover:bg-white/20 disabled:opacity-50'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50'
+                      }`}
+                      title="Copy to clipboard"
+                    >
+                      <Clipboard className="w-4 h-4" />
+                      Copy
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3">
