@@ -30,6 +30,11 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
+    // #region agent log
+    const uidData = { uidPrefix: uid.slice(0, 8) };
+    console.log('[StockX listings/native] uid resolved', uidData);
+    fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/listings/native/route.ts:resolved-uid',message:'Listings API uid resolved',data:uidData,timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion agent log
 
     const adminDb = getAdminDb();
     if (!adminDb) {
@@ -45,6 +50,11 @@ export async function GET(request: NextRequest) {
     const expiresAt = Number(stockxTokens?.expires_at || 0);
 
     if (!accessToken || !refreshToken) {
+      // #region agent log
+      const noTokData = { uidPrefix: uid.slice(0, 8) };
+      console.log('[StockX listings/native] no tokens for user', noTokData);
+      fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/listings/native/route.ts:no-tokens',message:'No StockX tokens for user',data:noTokData,timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion agent log
       return NextResponse.json({ success: false, error: 'StockX not connected for this user' }, { status: 401 });
     }
 
@@ -107,6 +117,11 @@ export async function GET(request: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
+      // #region agent log
+      const stockxFailData = { status: res.status, uidPrefix: uid.slice(0, 8) };
+      console.log('[StockX listings/native] StockX API non-OK', stockxFailData);
+      fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/listings/native/route.ts:stockx-401',message:'StockX API non-OK',data:stockxFailData,timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion agent log
       return NextResponse.json(
         { success: false, error: 'Failed to fetch listings from StockX', status: res.status, detail: text.slice(0, 200) },
         { status: 502 }

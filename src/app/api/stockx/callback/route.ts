@@ -83,13 +83,11 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('=== STOCKX CALLBACK ===');
-    console.log('Callback request from:', {
-      host,
-      baseUrl,
-      code: code ? 'present' : 'missing',
-      state: state ? 'present' : 'missing',
-      error
-    });
+    const entryData = { host, baseUrl, hasCode: !!code, hasState: !!state, errorParam: error || null, statePrefix: state ? String(state).slice(0, 6) : null };
+    console.log('Callback request from:', entryData);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/callback/route.ts:entry',message:'StockX callback hit',data:entryData,timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion agent log
 
     // ------------------------------------------------------------
     // Native iOS flow (cookie-free): if state exists in Firestore,
@@ -107,6 +105,11 @@ export async function GET(request: NextRequest) {
           const uid = String(stateData?.uid || '').trim();
           const callbackScheme = safeCallbackScheme(stateData?.callbackScheme);
           const expiresAtMs = typeof stateData?.expiresAtMs === 'number' ? stateData.expiresAtMs : 0;
+          // #region agent log
+          const nativeData = { uidPrefix: uid ? uid.slice(0, 8) : null, expiresAtMs };
+          console.log('[StockX callback] native branch: state found', nativeData);
+          fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/callback/route.ts:native-branch',message:'Native branch: state found',data:nativeData,timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+          // #endregion agent log
 
           if (!uid) {
             return NextResponse.redirect(buildAppRedirect(callbackScheme, { success: '0', error: 'missing_uid_for_state' }));
@@ -143,6 +146,11 @@ export async function GET(request: NextRequest) {
 
             if (!tokenResponse.ok) {
               const errorText = await tokenResponse.text().catch(() => '');
+              // #region agent log
+              const failData = { status: tokenResponse.status, detail: errorText.slice(0, 80) };
+              console.log('[StockX callback] token exchange failed', failData);
+              fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/callback/route.ts:token-exchange-fail',message:'Token exchange failed',data:failData,timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+              // #endregion agent log
               return NextResponse.redirect(
                 buildAppRedirect(callbackScheme, {
                   success: '0',
@@ -175,6 +183,11 @@ export async function GET(request: NextRequest) {
               },
               { merge: true }
             );
+            // #region agent log
+            const savedData = { uidPrefix: uid.slice(0, 8) };
+            console.log('[StockX callback] tokens saved to Firestore', savedData);
+            fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/callback/route.ts:tokens-saved',message:'Tokens saved to Firestore',data:savedData,timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+            // #endregion agent log
 
             try { await stateRef.delete(); } catch {}
 
@@ -186,6 +199,13 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(buildAppRedirect(callbackScheme, { success: '0', error: e?.message || 'server_error' }));
           }
         }
+        // #region agent log
+        else {
+          const notFoundData = { hasAdminDb: !!adminDb, statePrefix: state ? String(state).slice(0, 6) : null };
+          console.log('[StockX callback] state NOT in Firestore', notFoundData);
+          fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/callback/route.ts:state-not-found',message:'State not in Firestore',data:notFoundData,timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+        }
+        // #endregion agent log
       }
     }
 

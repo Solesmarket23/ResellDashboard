@@ -57,6 +57,11 @@ export async function POST(request: NextRequest) {
       },
       { merge: true }
     );
+    // #region agent log
+    const startData = { uidPrefix: uid.slice(0, 8), statePrefix: state.slice(0, 6) };
+    console.log('[StockX native-auth/start] state doc created', startData);
+    fetch('http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'stockx/native-auth/start/route.ts:state-created',message:'OAuth state doc created',data:startData,timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion agent log
 
     const authUrl =
       `https://accounts.stockx.com/authorize?client_id=${encodeURIComponent(clientId)}` +
