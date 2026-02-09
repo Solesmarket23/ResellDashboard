@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminDb, getAdminAuth } from '@/lib/firebase/admin';
+import { getAdminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { resolveNativeAuthUserId } from '@/lib/nativeAuthResolver';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-function getBearerToken(request: NextRequest): string | null {
-  const raw = request.headers.get('authorization') || request.headers.get('Authorization') || '';
-  const m = raw.match(/^Bearer\s+(.+)$/i);
-  const token = (m?.[1] || '').trim();
-  return token ? token : null;
-}
 
 function safeCallbackScheme(raw: unknown): string {
   const s = String(raw || '').trim();
@@ -27,19 +21,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing STOCKX_CLIENT_ID' }, { status: 500 });
     }
 
-    const bearer = getBearerToken(request);
-    if (!bearer) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization: Bearer <Firebase ID token>' }, { status: 401 });
-    }
-
-    const adminAuth = getAdminAuth();
-    if (!adminAuth) {
-      return NextResponse.json({ success: false, error: 'Firebase Admin not initialized' }, { status: 500 });
-    }
-    const decoded = await adminAuth.verifyIdToken(bearer);
-    const uid = String(decoded?.uid || '').trim();
+    const uid = await resolveNativeAuthUserId(request);
     if (!uid) {
-      return NextResponse.json({ success: false, error: 'Invalid Firebase token (missing uid)' }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: 'Missing Authorization: Bearer <Firebase ID token or site session token>' },
+        { status: 401 }
+      );
     }
 
     const body = (await request.json().catch(() => null)) as any;

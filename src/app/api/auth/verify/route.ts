@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'crypto';
+import { signSiteSessionToken } from '@/lib/siteSessionToken';
 
 export async function POST(request: NextRequest) {
   try {
     const { password, remember } = await request.json();
-    
+
     // Get password from environment variable (do not hardcode secrets in the repo)
     const sitePassword = process.env.SITE_PASSWORD;
     if (!sitePassword) {
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    
+
     if (password === sitePassword) {
       // Generate a unique user ID based on the site password
       // This ensures the same "user" across all password-protected sessions
@@ -21,12 +22,18 @@ export async function POST(request: NextRequest) {
         .update(`solesmarket-user-${sitePassword}`)
         .digest('hex')
         .substring(0, 28); // Firebase UIDs are typically 28 chars
-      
+
+      // Optional: JWT for native app so it can call APIs that require Bearer auth (e.g. StockX)
+      const siteSessionToken = signSiteSessionToken(userId);
+      const hasSecret = Boolean(process.env.SITE_SESSION_SECRET);
+      console.log('[Auth] verify: site password OK, userId=', userId.slice(0, 8), '…', 'siteSessionToken:', siteSessionToken ? `sent (length ${siteSessionToken.length})` : 'NOT SENT', 'SITE_SESSION_SECRET set:', hasSecret);
+
       // Set authentication cookie with user info
-      const response = NextResponse.json({ 
+      const response = NextResponse.json({
         success: true,
-        userId: userId,
-        email: `user@solesmarket.com` // Default email for password-protected users
+        userId,
+        email: `user@solesmarket.com`,
+        ...(siteSessionToken ? { siteSessionToken } : {}),
       });
       
       const shouldRemember = remember !== false;
