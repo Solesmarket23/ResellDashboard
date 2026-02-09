@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
           listing?.product?.name ||
           'Listing';
         const amount = listing?.amount ?? listing?.price ?? '0';
-        const myPrice = parseStockXMoneyToDollars(amount) ?? parseFloat(amount) || 0;
+        const myPrice = parseStockXMoneyToDollars(amount) ?? (parseFloat(amount) || 0);
         if (myPrice <= 0 || !productId || !variantId) continue;
 
         const { lowestAsk } = await fetchMarketData(productId, variantId, accessToken, apiKey);
