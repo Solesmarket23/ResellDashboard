@@ -161,7 +161,10 @@ export async function GET(request: NextRequest) {
 
             try { await stateRef.delete(); } catch {}
 
-            return NextResponse.redirect(buildAppRedirect(callbackScheme, { success: '1' }));
+            // Redirect to a web success page so the user sees "Connected" in the browser.
+            // Use a fixed production URL so in-app Safari never gets an invalid address.
+            const successUrl = 'https://www.solesmarket.com/stockx-connected';
+            return NextResponse.redirect(successUrl);
           } catch (e: any) {
             return NextResponse.redirect(buildAppRedirect(callbackScheme, { success: '0', error: e?.message || 'server_error' }));
           }
