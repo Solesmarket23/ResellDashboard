@@ -15,7 +15,8 @@ const PUBLIC_ROUTES = [
   '/api/user/stockx-keys',  // User API key management
   '/',  // Landing page
   '/landing',  // Landing page route
-  '/api/subscribe'  // Email subscription endpoint
+  '/api/subscribe',  // Email subscription endpoint
+  '/stockx-connected',  // OAuth success landing (no cookies when coming from StockX in-app Safari)
 ];
 
 // Routes that require site password but not Firebase auth

@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/admin';
 
+/**
+ * StockX OAuth callback – shared by web and native.
+ *
+ * WEB: User hits GET /api/stockx/auth → we set cookies (stockx_state, stockx_return_to, and
+ *      site-user-id is already set from site password). Redirect to StockX. StockX redirects here
+ *      with ?code=&state=. We match state to cookie, exchange code, get userId from site-user-id
+ *      cookie, save tokens to users/{userId}, redirect to returnTo.
+ *
+ * NATIVE: App calls POST /api/stockx/native-auth/start with Bearer (site session or Firebase).
+ *      We store state in Firestore (stockxOAuthStates) with uid, same redirect_uri. App opens
+ *      Safari to the same authorize URL. StockX redirects here with ?code=&state=. We look up
+ *      state in Firestore; if found, use uid from doc, exchange code, save to users/{uid},
+ *      redirect to https://www.solesmarket.com/stockx-connected (must be public in middleware).
+ *
+ * Same redirect_uri and token storage (users/{uid}); only state/userId source differs (cookies vs Firestore).
+ */
+
 // Function to validate if StockX tokens are still valid
 async function validateTokens(accessToken: string): Promise<boolean> {
   try {
@@ -161,10 +178,10 @@ export async function GET(request: NextRequest) {
 
             try { await stateRef.delete(); } catch {}
 
-            // Redirect to a web success page so the user sees "Connected" in the browser.
-            // Use a fixed production URL so in-app Safari never gets an invalid address.
-            const successUrl = 'https://www.solesmarket.com/stockx-connected';
-            return NextResponse.redirect(successUrl);
+            // Redirect back into the app so it can dismiss Safari and auto-refresh listings.
+            // Fallback to web page if app doesn't register the scheme.
+            const appReturnUrl = buildAppRedirect(callbackScheme, { success: '1' });
+            return NextResponse.redirect(appReturnUrl);
           } catch (e: any) {
             return NextResponse.redirect(buildAppRedirect(callbackScheme, { success: '0', error: e?.message || 'server_error' }));
           }
