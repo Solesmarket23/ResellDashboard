@@ -91,11 +91,13 @@ export async function GET(request: NextRequest) {
 
     // If StockX says unauthorized, try refresh once.
     if (res.status === 401 || res.status === 403) {
+      console.log('[StockX listings/native] got 401/403, attempting token refresh', { uidPrefix: uid.slice(0, 8) });
       const refreshed = await refreshStockXTokens(refreshToken);
       if (!refreshed.success || !refreshed.accessToken) {
+        console.log('[StockX listings/native] refresh failed', { uidPrefix: uid.slice(0, 8), error: refreshed.error || 'no token' });
         return NextResponse.json({ success: false, error: 'StockX token expired, please reconnect' }, { status: 401 });
       }
-
+      console.log('[StockX listings/native] refresh ok, retrying listings request');
       accessToken = refreshed.accessToken;
       refreshToken = refreshed.refreshToken || refreshToken;
       const newExpiresAt = Date.now() + 55 * 60 * 1000;
@@ -113,6 +115,7 @@ export async function GET(request: NextRequest) {
       );
 
       res = await fetchListings(accessToken, page, pageSize);
+      console.log('[StockX listings/native] retry response status', { status: res.status, uidPrefix: uid.slice(0, 8) });
     }
 
     if (!res.ok) {
