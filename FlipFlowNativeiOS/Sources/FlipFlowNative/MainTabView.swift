@@ -58,6 +58,12 @@ struct MainTabView: View {
           Label("Deliveries", systemImage: "truck.box")
         }
         .tag(3)
+
+      ShippingFulfillmentView()
+        .tabItem {
+          Label("Ship", systemImage: "shippingbox.fill")
+        }
+        .tag(4)
     }
     .background(Color.clear)
     .onReceive(NotificationCenter.default.publisher(for: BuyboxPushNotification.openListing)) { notification in

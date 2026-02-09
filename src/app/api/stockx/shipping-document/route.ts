@@ -109,14 +109,18 @@ export async function GET(request: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
+      const is404 = res.status === 404;
+      const userMessage = is404
+        ? 'No shipping label available for this order. Shipping labels are only available for Standard/Direct orders.'
+        : 'StockX shipping-document API error';
       return NextResponse.json(
         {
           success: false,
-          error: 'StockX shipping-document API error',
+          error: userMessage,
           orderNumber,
           statusCode: res.status,
           details: text,
-          note: 'This endpoint only supports Direct order types.',
+          note: is404 ? undefined : 'This endpoint only supports Direct order types.',
         },
         { status: res.status }
       );

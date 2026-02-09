@@ -14,5 +14,8 @@ export const COLLECTIONS = {
   
   // Sync and status collections
   STOCKX_SYNC_INFO: 'stockxSyncInfo',
-  VERIFICATION_STATUS: 'verificationStatus'
+  VERIFICATION_STATUS: 'verificationStatus',
+
+  // Shipping fulfillment: user's locally marked-as-shipped order numbers (not StockX state)
+  MARKED_SHIPPED: 'markedShipped',
 } as const;
