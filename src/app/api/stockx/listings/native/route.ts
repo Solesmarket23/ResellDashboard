@@ -257,7 +257,19 @@ export async function GET(request: NextRequest) {
       (Array.isArray(data?.data) ? data.data : null) ??
       [];
     if (listings.length > 0) {
-      // 1) Normalize imageUrl from listing.product when present
+      // 1) Normalize productId, variantId (same as web GET /api/stockx/listings) so native app can call market-data
+      for (let i = 0; i < listings.length; i++) {
+        const listing = listings[i];
+        const product = listing.product || {};
+        const variant = listing.variant || {};
+        const productId =
+          String(listing.productId ?? product.productId ?? product.id ?? '').trim() || '';
+        const variantId =
+          String(listing.variantId ?? variant.variantId ?? variant.id ?? '').trim() || '';
+        listings[i] = { ...listing, productId, variantId };
+      }
+
+      // 2) Normalize imageUrl from listing.product when present
       for (let i = 0; i < listings.length; i++) {
         const listing = listings[i];
         const product = listing.product || {};
@@ -275,7 +287,7 @@ export async function GET(request: NextRequest) {
         listings[i] = { ...listing, imageUrl: url, image_url: url };
       }
 
-      // 2) Enrich missing images from StockX catalog (same as web repricing)
+      // 3) Enrich missing images from StockX catalog (same as web repricing)
       const missingImageByProductId = new Map<string, number[]>();
       listings.forEach((listing: any, index: number) => {
         const pid = String(listing.productId ?? listing.product?.productId ?? '').trim();
@@ -301,7 +313,7 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 3) Fallback: same as deliveries/purchases — match from user's purchases by productName+size (and styleId+size if present)
+      // 4) Fallback: same as deliveries/purchases — match from user's purchases by productName+size (and styleId+size if present)
       const stillMissing: number[] = [];
       listings.forEach((listing: any, index: number) => {
         const hasImage = typeof listing.imageUrl === 'string' && listing.imageUrl.trim().length > 0;

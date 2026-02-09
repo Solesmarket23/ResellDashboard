@@ -137,15 +137,22 @@ export async function POST(request: NextRequest) {
 
         if (!variantData) return { listingId, marketData: null, error: 'no_variant_data' };
 
+        // StockX may return camelCase or snake_case
+        const raw = variantData as Record<string, unknown>;
+        const lowestAskRaw = raw.lowestAskAmount ?? raw.lowest_ask_amount;
+        const flexLowestAskRaw = raw.flexLowestAskAmount ?? raw.flex_lowest_ask_amount;
+        const highestBidRaw = raw.highestBidAmount ?? raw.highest_bid_amount;
+        const lastSaleRaw = raw.lastSaleAmount ?? raw.last_sale_amount;
+
         return {
           listingId,
           marketData: {
-            lowestAsk: parseStockXMoneyToDollars(variantData.lowestAskAmount),
-            flexLowestAsk: parseStockXMoneyToDollars(variantData.flexLowestAskAmount),
-            highestBid: parseStockXMoneyToDollars(variantData.highestBidAmount),
-            lastSale: parseStockXMoneyToDollars(variantData.lastSaleAmount),
-            numberOfAsks: variantData.numberOfAsks || 0,
-            numberOfBids: variantData.numberOfBids || 0
+            lowestAsk: parseStockXMoneyToDollars(lowestAskRaw),
+            flexLowestAsk: parseStockXMoneyToDollars(flexLowestAskRaw),
+            highestBid: parseStockXMoneyToDollars(highestBidRaw),
+            lastSale: parseStockXMoneyToDollars(lastSaleRaw),
+            numberOfAsks: (raw.numberOfAsks as number) ?? (raw.number_of_asks as number) ?? 0,
+            numberOfBids: (raw.numberOfBids as number) ?? (raw.number_of_bids as number) ?? 0
           }
         };
       }
