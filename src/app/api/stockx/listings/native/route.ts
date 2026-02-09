@@ -7,17 +7,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-async function fetchListings(accessToken: string, page = 1, pageSize = 100) {
-  // StockX endpoints vary by account. This is the same base used elsewhere in the repo.
-  const url = `https://api.stockx.com/v2/selling/listings?limit=${pageSize}&page=${page}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/json',
-    },
-    cache: 'no-store',
-  });
-
+/** Try api.stockx.com first; on 401/403 try gateway.stockx.com (tokens are issued for audience gateway.stockx.com). */
+async function fetchListings(accessToken: string, page = 1, pageSize = 100): Promise<Response> {
+  const path = `/v2/selling/listings?limit=${pageSize}&page=${page}`;
+  const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } as const;
+  const opts = { headers, cache: 'no-store' as RequestCache };
+  let res = await fetch(`https://api.stockx.com${path}`, opts);
+  if (!res.ok && (res.status === 401 || res.status === 403)) {
+    const gw = await fetch(`https://gateway.stockx.com${path}`, opts);
+    if (gw.ok) console.log('[StockX listings/native] gateway.stockx.com succeeded after api 401');
+    return gw;
+  }
   return res;
 }
 
