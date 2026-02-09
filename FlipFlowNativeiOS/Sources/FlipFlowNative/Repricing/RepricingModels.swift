@@ -165,6 +165,19 @@ struct RepricingListing: Identifiable {
   var minPrice: Double?
   var maxPrice: Double?
 
+  /// Leader/Synced: same product+size = one group; leader = lowest price. Filled by ViewModel.
+  var inventoryGroupId: String?
+  var isGroupLeader: Bool?
+  var groupLeaderId: String?
+  var groupSize: Int?
+
+  /// Market data (lowest ask, flex). Filled by ViewModel from market-data API.
+  var lowestAsk: Double?
+  var flexLowestAsk: Double?
+
+  /// Order when fetched (0 = first in response). Used for "Newest to oldest" sort.
+  var fetchedIndex: Int
+
   static func from(_ raw: RawStockXListing) -> RepricingListing {
     RepricingListing(
       listingId: raw.listingIdValue,
@@ -174,7 +187,14 @@ struct RepricingListing: Identifiable {
       imageUrl: raw.resolvedImageUrl,
       status: raw.status,
       productId: raw.productId,
-      variantId: raw.variantId
+      variantId: raw.variantId,
+      inventoryGroupId: nil,
+      isGroupLeader: nil,
+      groupLeaderId: nil,
+      groupSize: nil,
+      lowestAsk: nil,
+      flexLowestAsk: nil,
+      fetchedIndex: 0
     )
   }
 }

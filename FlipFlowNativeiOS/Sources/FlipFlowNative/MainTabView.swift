@@ -3,6 +3,8 @@ import UIKit
 
 struct MainTabView: View {
   @EnvironmentObject private var auth: AuthViewModel
+  @State private var selectedTab: Int = 0
+  @State private var pendingBuyboxListingId: String?
 
   init() {
     // Make the tab bar + nav bars transparent so the Neon app background shows through.
@@ -29,29 +31,67 @@ struct MainTabView: View {
   }
 
   var body: some View {
-    TabView {
+    TabView(selection: $selectedTab) {
       PlaceholderTab(title: "Dashboard", subtitle: "Buttons coming next", systemImage: "chart.line.uptrend.xyaxis")
         .tabItem {
           Label("Dashboard", systemImage: "chart.line.uptrend.xyaxis")
         }
+        .tag(0)
 
-      RepricingView()
+      RepricingView(
+        pendingBuyboxListingId: pendingBuyboxListingId,
+        onClearPendingBuybox: { pendingBuyboxListingId = nil }
+      )
         .tabItem {
           Label("Repricing", systemImage: "tag")
         }
+        .tag(1)
 
       ReceivingView()
         .tabItem {
           Label("Purchases", systemImage: "shippingbox")
         }
+        .tag(2)
 
       DeliveriesView()
         .tabItem {
           Label("Deliveries", systemImage: "truck.box")
         }
+        .tag(3)
     }
     .background(Color.clear)
+    .onReceive(NotificationCenter.default.publisher(for: BuyboxPushNotification.openListing)) { notification in
+      if let listingId = notification.userInfo?[BuyboxPushNotification.listingIdKey] as? String, !listingId.isEmpty {
+        pendingBuyboxListingId = listingId
+        selectedTab = 1
+      }
+    }
+    .onAppear {
+      registerPushTokenIfNeeded()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: PushTokenHolder.tokenDidUpdate)) { _ in
+      registerPushTokenIfNeeded()
+    }
   }
+
+  private func registerPushTokenIfNeeded() {
+    guard let token = PushTokenHolder.currentFCMToken, !token.isEmpty else { return }
+    Task {
+      guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
+      let url = URL(string: "https://www.solesmarket.com/api/notifications/push/register")!
+      var request = URLRequest(url: url)
+      request.httpMethod = "POST"
+      request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      request.httpBody = try? JSONEncoder().encode(PushRegisterBody(token: token, platform: "ios"))
+      _ = try? await URLSession.shared.data(for: request)
+    }
+  }
+}
+
+private struct PushRegisterBody: Encodable {
+  let token: String
+  let platform: String
 }
 
 private struct PlaceholderTab: View {

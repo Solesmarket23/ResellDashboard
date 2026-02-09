@@ -8,6 +8,8 @@ protocol RepricingRepositoryProtocol {
   func fetchPricingSettings(idToken: String) async throws -> [PricingSettingDoc]
   /// Save pricing rule and min/max for one listing.
   func savePricingSetting(idToken: String, listingId: String, productId: String?, variantId: String?, strategyType: String, minPrice: Double?, maxPrice: Double?) async throws
+  /// Fetch market data (lowestAsk, flexLowestAsk) for given listings. Returns map listingId -> (lowestAsk, flexLowestAsk).
+  func fetchMarketData(idToken: String, listings: [(listingId: String, productId: String?, variantId: String?)]) async throws -> [String: (lowestAsk: Double?, flexLowestAsk: Double?)]
 }
 
 final class ApiRepricingRepository: RepricingRepositoryProtocol {
@@ -146,6 +148,72 @@ final class ApiRepricingRepository: RepricingRepositoryProtocol {
       let decoded = try? JSONDecoder().decode(PricingSettingsResponse.self, from: data)
       throw NSError(domain: "FlipFlowNative.Repricing", code: status, userInfo: [NSLocalizedDescriptionKey: decoded?.error ?? "Failed to save settings"])
     }
+  }
+
+  func fetchMarketData(idToken: String, listings: [(listingId: String, productId: String?, variantId: String?)]) async throws -> [String: (lowestAsk: Double?, flexLowestAsk: Double?)] {
+    guard !listings.isEmpty else { return [:] }
+    let url = baseURL.appendingPathComponent("api/stockx/listings/market-data")
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.cachePolicy = .reloadIgnoringLocalCacheData
+    req.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    let payload = listings.map { l -> [String: Any] in
+      var o: [String: Any] = ["listingId": l.listingId]
+      if let p = l.productId, !p.isEmpty { o["productId"] = p }
+      if let v = l.variantId, !v.isEmpty { o["variantId"] = v }
+      return o
+    }
+    req.httpBody = try JSONSerialization.data(withJSONObject: ["listings": payload])
+
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    if status != 200 {
+      let err = (try? JSONDecoder().decode(MarketDataErrorResponse.self, from: data))?.error ?? "Market data failed"
+      throw NSError(domain: "FlipFlowNative.Repricing", code: status, userInfo: [NSLocalizedDescriptionKey: err])
+    }
+
+    let decoded = try JSONDecoder().decode(MarketDataResponse.self, from: data)
+    var out: [String: (lowestAsk: Double?, flexLowestAsk: Double?)] = [:]
+    for item in decoded.marketData ?? [] {
+      let lid = item.listingId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !lid.isEmpty else { continue }
+      let low = item.marketData?.lowestAsk
+      let flex = item.marketData?.flexLowestAsk
+      out[lid] = (lowestAsk: low, flexLowestAsk: flex)
+    }
+    return out
+  }
+}
+
+private struct MarketDataErrorResponse: Decodable {
+  let error: String?
+}
+
+private struct MarketDataResponse: Decodable {
+  let success: Bool?
+  let marketData: [MarketDataItem]?
+}
+
+private struct MarketDataItem: Decodable {
+  let listingId: String
+  let marketData: MarketDataPayload?
+}
+
+private struct MarketDataPayload: Decodable {
+  let lowestAsk: Double?
+  let flexLowestAsk: Double?
+
+  enum CodingKeys: String, CodingKey {
+    case lowestAsk, flexLowestAsk
+    case lowest_ask, flex_lowest_ask
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    lowestAsk = (try? c.decode(Double.self, forKey: .lowestAsk)) ?? (try? c.decode(Int.self, forKey: .lowestAsk)).map(Double.init) ?? (try? c.decode(Double.self, forKey: .lowest_ask)) ?? (try? c.decode(Int.self, forKey: .lowest_ask)).map(Double.init)
+    flexLowestAsk = (try? c.decode(Double.self, forKey: .flexLowestAsk)) ?? (try? c.decode(Int.self, forKey: .flexLowestAsk)).map(Double.init) ?? (try? c.decode(Double.self, forKey: .flex_lowest_ask)) ?? (try? c.decode(Int.self, forKey: .flex_lowest_ask)).map(Double.init)
   }
 }
 

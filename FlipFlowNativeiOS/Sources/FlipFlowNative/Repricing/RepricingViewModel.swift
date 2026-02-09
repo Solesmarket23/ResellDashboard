@@ -58,6 +58,27 @@ final class RepricingViewModel: ObservableObject {
       } catch {
         print("[Repricing] refresh: could not load pricing settings: \(error). Continuing with listings only.")
       }
+      merged = Self.applyInventoryGroups(merged)
+      for i in merged.indices {
+        merged[i].fetchedIndex = i
+      }
+      if !merged.isEmpty {
+        let toFetch = Array(merged.prefix(25)).map { (listingId: $0.listingId, productId: $0.productId, variantId: $0.variantId) }
+        do {
+          let marketMap = try await repo.fetchMarketData(idToken: token, listings: toFetch)
+          let norm = Self.normalizeListingId
+          for i in merged.indices {
+            let key = norm(merged[i].listingId)
+            if let pair = marketMap[key] ?? marketMap[merged[i].listingId] {
+              merged[i].lowestAsk = pair.lowestAsk
+              merged[i].flexLowestAsk = pair.flexLowestAsk
+            }
+          }
+          print("[Repricing] refresh: merged market data for \(min(merged.count, 25)) listings.")
+        } catch {
+          print("[Repricing] refresh: market data failed: \(error). Continuing without.")
+        }
+      }
       listings = merged
       totalCount = total
       print("[Repricing] refresh: success, listings=\(merged.count), total=\(total ?? -1).")
@@ -68,7 +89,9 @@ final class RepricingViewModel: ObservableObject {
         if let freshToken = try? await getIDToken(true), !freshToken.isEmpty {
           do {
             let (fetched, total) = try await repo.fetchListings(idToken: freshToken, page: 1, pageSize: 100)
-            listings = fetched
+            var retryList = Self.applyInventoryGroups(fetched)
+            for i in retryList.indices { retryList[i].fetchedIndex = i }
+            listings = retryList
             totalCount = total
             print("[Repricing] refresh: retry with fresh token succeeded, listings=\(fetched.count).")
             return
@@ -97,29 +120,93 @@ final class RepricingViewModel: ObservableObject {
     s.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  /// Save pricing rule and min/max for a listing, then update local state.
+  /// Group by productId+variantId (ACTIVE only); leader = lowest price; propagate leader's strategy to followers.
+  private static func applyInventoryGroups(_ list: [RepricingListing]) -> [RepricingListing] {
+    typealias GroupKey = String
+    var groups: [GroupKey: [Int]] = [:] // groupId -> indices in list
+    for (index, listing) in list.enumerated() {
+      guard listing.status == "ACTIVE" else { continue }
+      let pid = listing.productId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let vid = listing.variantId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !pid.isEmpty || !vid.isEmpty else { continue }
+      let key = "\(pid)_\(vid)"
+      groups[key, default: []].append(index)
+    }
+    var result = list
+    for (groupId, indices) in groups {
+      guard !indices.isEmpty else { continue }
+      let count = indices.count
+      if count == 1 {
+        let i = indices[0]
+        result[i].inventoryGroupId = groupId
+        result[i].isGroupLeader = true
+        result[i].groupLeaderId = result[i].listingId
+        result[i].groupSize = 1
+        continue
+      }
+      let sorted = indices.sorted { result[$0].currentPrice < result[$1].currentPrice }
+      let leaderIdx = sorted[0]
+      let leaderId = result[leaderIdx].listingId
+      result[leaderIdx].inventoryGroupId = groupId
+      result[leaderIdx].isGroupLeader = true
+      result[leaderIdx].groupLeaderId = leaderId
+      result[leaderIdx].groupSize = count
+      let leaderStrategy = result[leaderIdx].pricingStrategyType
+      let leaderMin = result[leaderIdx].minPrice
+      let leaderMax = result[leaderIdx].maxPrice
+      for idx in sorted.dropFirst() {
+        result[idx].inventoryGroupId = groupId
+        result[idx].isGroupLeader = false
+        result[idx].groupLeaderId = leaderId
+        result[idx].groupSize = count
+        result[idx].pricingStrategyType = leaderStrategy
+        result[idx].minPrice = leaderMin
+        result[idx].maxPrice = leaderMax
+      }
+    }
+    return result
+  }
+
+  /// For groups: save/apply to the leader so one setting per product+size. For single listings, returns listingId.
+  func effectiveLeaderId(for listingId: String) -> String {
+    let norm = Self.normalizeListingId(listingId)
+    guard let listing = listings.first(where: { Self.normalizeListingId($0.listingId) == norm }) else { return listingId }
+    if let leader = listing.groupLeaderId, !leader.isEmpty { return leader }
+    return listingId
+  }
+
+  /// Save pricing rule and min/max for a listing (or group leader). Updates local state for leader and all synced listings in the group.
   func saveSettings(listingId: String, productId: String?, variantId: String?, strategyType: String, minPrice: Double?, maxPrice: Double?) async throws {
     guard let token = try? await getIDToken(true), !token.isEmpty else {
       throw NSError(domain: "FlipFlowNative.Repricing", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
     }
-    let normalizedId = Self.normalizeListingId(listingId)
-    try await repo.savePricingSetting(idToken: token, listingId: listingId, productId: productId, variantId: variantId, strategyType: strategyType, minPrice: minPrice, maxPrice: maxPrice)
-    if let idx = listings.firstIndex(where: { Self.normalizeListingId($0.listingId) == normalizedId }) {
-      var arr = listings
-      var item = arr[idx]
-      item.pricingStrategyType = strategyType
-      item.minPrice = minPrice
-      item.maxPrice = maxPrice
-      arr[idx] = item
-      listings = arr
+    let leaderId = effectiveLeaderId(for: listingId)
+    guard let leader = listings.first(where: { Self.normalizeListingId($0.listingId) == Self.normalizeListingId(leaderId) }) else { return }
+    try await repo.savePricingSetting(idToken: token, listingId: leaderId, productId: leader.productId, variantId: leader.variantId, strategyType: strategyType, minPrice: minPrice, maxPrice: maxPrice)
+    let groupId = leader.inventoryGroupId
+    var arr = listings
+    for i in arr.indices {
+      let isInGroup = groupId != nil && arr[i].inventoryGroupId == groupId
+      let isLeader = Self.normalizeListingId(arr[i].listingId) == Self.normalizeListingId(leaderId)
+      if isLeader || (isInGroup && arr[i].groupLeaderId == leaderId) {
+        arr[i].pricingStrategyType = strategyType
+        arr[i].minPrice = minPrice
+        arr[i].maxPrice = maxPrice
+      }
     }
+    listings = arr
   }
 
-  /// Apply same rule and min/max to multiple listings; updates local state for each.
+  /// Apply same rule and min/max to multiple listings (by unique group leaders); updates local state for each group.
   func applyRuleToListings(listingIds: [String], strategyType: String, minPrice: Double?, maxPrice: Double?) async throws {
     let norm = Self.normalizeListingId
+    var leaderIdsSeen = Set<String>()
     for id in listingIds {
-      guard let listing = listings.first(where: { norm($0.listingId) == norm(id) }) else { continue }
+      let leaderId = effectiveLeaderId(for: id)
+      let key = norm(leaderId)
+      if leaderIdsSeen.contains(key) { continue }
+      leaderIdsSeen.insert(key)
+      guard let listing = listings.first(where: { norm($0.listingId) == key }) else { continue }
       try await saveSettings(
         listingId: listing.listingId,
         productId: listing.productId,

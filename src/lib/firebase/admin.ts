@@ -2,10 +2,12 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth, type Auth } from 'firebase-admin/auth';
+import { getMessaging, type Messaging } from 'firebase-admin/messaging';
 
 let adminApp;
 let adminDb;
 let adminAuth: Auth | null = null;
+let adminMessaging: Messaging | null = null;
 
 // Lazy initialization function - only runs when actually needed
 function initializeAdmin() {
@@ -36,8 +38,8 @@ function initializeAdmin() {
     });
     
     adminDb = getFirestore(adminApp);
-    // Lazily initialize Auth too (used for verifying Firebase ID tokens from native clients).
     adminAuth = getAuth(adminApp);
+    adminMessaging = getMessaging(adminApp);
     console.log('✅ Firebase Admin SDK initialized successfully');
     return adminDb;
   } catch (error) {
@@ -53,9 +55,14 @@ export const getAdminDb = () => {
 
 export const getAdminAuth = (): Auth | null => {
   if (adminAuth) return adminAuth;
-  // Ensure adminApp is initialized (and adminAuth set).
   initializeAdmin();
   return adminAuth;
+};
+
+export const getAdminMessaging = (): Messaging | null => {
+  if (adminMessaging) return adminMessaging;
+  initializeAdmin();
+  return adminMessaging;
 };
 
 // Export adminApp and adminDb (adminDb will be null until getAdminDb() is called)

@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/deliveries-slack?mode=minutely",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/buybox-alerts",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

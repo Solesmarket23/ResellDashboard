@@ -2,6 +2,8 @@ import SwiftUI
 
 struct RepricingView: View {
   @EnvironmentObject private var auth: AuthViewModel
+  var pendingBuyboxListingId: String? = nil
+  var onClearPendingBuybox: () -> Void = {}
 
   var body: some View {
     switch auth.session {
@@ -11,7 +13,9 @@ struct RepricingView: View {
       }
     case .firebase, .sitePassword:
       RepricingHostView(
-        getIDToken: { forceRefresh in try await auth.getApiBearerToken(forcingRefresh: forceRefresh) }
+        getIDToken: { forceRefresh in try await auth.getApiBearerToken(forcingRefresh: forceRefresh) },
+        pendingBuyboxListingId: pendingBuyboxListingId,
+        onClearPendingBuybox: onClearPendingBuybox
       )
     }
   }
@@ -43,13 +47,17 @@ struct RepricingView: View {
 private struct RepricingHostView: View {
   @StateObject private var vm: RepricingViewModel
   @EnvironmentObject private var auth: AuthViewModel
+  var pendingBuyboxListingId: String?
+  var onClearPendingBuybox: () -> Void
 
-  init(getIDToken: @escaping (Bool) async throws -> String?) {
+  init(getIDToken: @escaping (Bool) async throws -> String?, pendingBuyboxListingId: String? = nil, onClearPendingBuybox: @escaping () -> Void = {}) {
     _vm = StateObject(wrappedValue: RepricingViewModel(repo: ApiRepricingRepository(), getIDToken: getIDToken))
+    self.pendingBuyboxListingId = pendingBuyboxListingId
+    self.onClearPendingBuybox = onClearPendingBuybox
   }
 
   var body: some View {
-    RepricingScreen(vm: vm)
+    RepricingScreen(vm: vm, pendingBuyboxListingId: pendingBuyboxListingId, onClearPendingBuybox: onClearPendingBuybox)
       .onAppear {
         print("[Repricing] Screen appeared (listings=\(vm.listings.count), isLoading=\(vm.isLoading)).")
         if vm.listings.isEmpty, !vm.isLoading, vm.errorMessage == nil {
@@ -64,11 +72,14 @@ private enum RepricingSort: String, CaseIterable {
   case priceAsc = "Price (low → high)"
   case nameAsc = "Name (A → Z)"
   case nameDesc = "Name (Z → A)"
+  case newestToOldest = "Newest to oldest"
 }
 
 private struct RepricingScreen: View {
   @EnvironmentObject private var auth: AuthViewModel
   @ObservedObject var vm: RepricingViewModel
+  var pendingBuyboxListingId: String?
+  var onClearPendingBuybox: () -> Void
 
   @State private var showWebSheet: Bool = false
   @State private var webSheetURL: URL = URL(string: "https://www.solesmarket.com/dashboard?section=stockx-repricing")!
@@ -88,19 +99,75 @@ private struct RepricingScreen: View {
   @State private var isApplyingBatch: Bool = false
   @State private var batchError: String?
   @State private var toastMessage: String?
+  @State private var selectedSizeFilter: String?
+  @State private var filterNotWinningBuyboxOnly: Bool = false
 
   private var isRefreshInProgress: Bool { vm.isLoading || isRefreshingFromButton }
 
+  /// Common sizes for horizontal filter (shoes + clothing).
+  private static let commonSizeFilters: [String] = [
+    "All",
+    "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5",
+    "10", "10.5", "11", "11.5", "12", "12.5", "13", "14",
+    "S", "M", "L", "XL", "XXL",
+  ]
+
+  private func sizeMatchesFilter(_ size: String, selected: String?) -> Bool {
+    guard let selected = selected, selected != "All" else { return true }
+    let a = size.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let b = selected.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if a.isEmpty || b.isEmpty { return false }
+    return a == b
+  }
+
+  private func isNotWinningBuybox(_ listing: RepricingListing) -> Bool {
+    guard let ask = listing.lowestAsk, ask > 0 else { return false }
+    return listing.currentPrice > ask
+  }
+
+  /// Simulates the "you're not winning the buybox" push so you can test the open-to-listing flow.
+  private func sendTestBuyboxNotification() {
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    let listingId: String
+    let productName: String
+    if let first = vm.listings.first {
+      listingId = first.listingId
+      productName = first.productName
+    } else {
+      listingId = "test-buybox"
+      productName = "Test listing"
+    }
+    NotificationCenter.default.post(
+      name: BuyboxPushNotification.openListing,
+      object: nil,
+      userInfo: [
+        BuyboxPushNotification.listingIdKey: listingId,
+        BuyboxPushNotification.productNameKey: productName,
+      ]
+    )
+    // If we're already on Repricing, expand the row so the user sees the effect.
+    if !listingId.isEmpty, listingId != "test-buybox" {
+      expandedListingId = listingId
+    }
+  }
+
   private var filteredAndSortedListings: [RepricingListing] {
     let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let base = q.isEmpty ? vm.listings : vm.listings.filter {
+    var base = q.isEmpty ? vm.listings : vm.listings.filter {
       $0.productName.lowercased().contains(q) || $0.size.lowercased().contains(q)
+    }
+    if let sizeFilter = selectedSizeFilter, sizeFilter != "All" {
+      base = base.filter { sizeMatchesFilter($0.size, selected: sizeFilter) }
+    }
+    if filterNotWinningBuyboxOnly {
+      base = base.filter { isNotWinningBuybox($0) }
     }
     switch sortOption {
     case .priceDesc: return base.sorted { $0.currentPrice > $1.currentPrice }
     case .priceAsc: return base.sorted { $0.currentPrice < $1.currentPrice }
     case .nameAsc: return base.sorted { $0.productName.localizedCompare($1.productName) == .orderedAscending }
     case .nameDesc: return base.sorted { $0.productName.localizedCompare($1.productName) == .orderedDescending }
+    case .newestToOldest: return base.sorted { $0.fetchedIndex < $1.fetchedIndex }
     }
   }
 
@@ -142,6 +209,11 @@ private struct RepricingScreen: View {
               } label: {
                 Label("Open repricing in browser", systemImage: "safari")
               }
+              Button {
+                sendTestBuyboxNotification()
+              } label: {
+                Label("Test buybox notification", systemImage: "bell.badge")
+              }
               Button(role: .destructive) {
                 auth.signOut()
               } label: {
@@ -162,6 +234,18 @@ private struct RepricingScreen: View {
           print("[Repricing] StockX auth return: dismissing Safari and refreshing listings.")
           showWebSheet = false
           Task { await vm.refresh() }
+        }
+        .onChange(of: pendingBuyboxListingId) { _, newId in
+          if let id = newId, !id.isEmpty {
+            expandedListingId = id
+            onClearPendingBuybox()
+          }
+        }
+        .onAppear {
+          if let id = pendingBuyboxListingId, !id.isEmpty {
+            expandedListingId = id
+            onClearPendingBuybox()
+          }
         }
       }
     }
@@ -420,6 +504,8 @@ private struct RepricingScreen: View {
       if isSelectionMode && !selectedListingIds.isEmpty {
         batchApplyBar
       }
+      sizeFilterSection
+      notWinningBuyboxFilter
       searchAndSortBar
       if showSortMenu {
         sortMenuInlineContent
@@ -510,6 +596,66 @@ private struct RepricingScreen: View {
       RoundedRectangle(cornerRadius: 16, style: .continuous)
         .stroke(NeonTheme.border, lineWidth: 1)
     )
+  }
+
+  private var sizeFilterSection: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        ForEach(Self.commonSizeFilters, id: \.self) { size in
+          let isSelected = (size == "All" && selectedSizeFilter == nil) || selectedSizeFilter == size
+          Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.easeInOut(duration: 0.2)) {
+              selectedSizeFilter = size == "All" ? nil : size
+            }
+          } label: {
+            Text(size)
+              .font(.subheadline.weight(.medium))
+              .foregroundStyle(isSelected ? .black : NeonTheme.textSecondary)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 8)
+              .background(
+                isSelected ? NeonTheme.accentCyan : Color.white.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+              )
+              .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                  .stroke(isSelected ? Color.clear : NeonTheme.border.opacity(0.5), lineWidth: 1)
+              )
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .padding(.vertical, 4)
+    }
+  }
+
+  private var notWinningBuyboxFilter: some View {
+    Button {
+      UIImpactFeedbackGenerator(style: .light).impactOccurred()
+      withAnimation(.easeInOut(duration: 0.2)) {
+        filterNotWinningBuyboxOnly.toggle()
+      }
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: filterNotWinningBuyboxOnly ? "checkmark.circle.fill" : "circle")
+          .font(.subheadline)
+        Text("Not winning buybox")
+          .font(.subheadline.weight(.medium))
+      }
+      .foregroundStyle(filterNotWinningBuyboxOnly ? NeonTheme.accentCyan : NeonTheme.textSecondary)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(
+        Color.white.opacity(filterNotWinningBuyboxOnly ? 0.12 : 0.06),
+        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .stroke(NeonTheme.border.opacity(0.5), lineWidth: 1)
+      )
+    }
+    .buttonStyle(.plain)
   }
 
   private var batchRuleDropdown: some View {
@@ -828,13 +974,19 @@ private struct RepricingRowView: View {
         }
       }
       Spacer(minLength: 8)
-      Text(formatPrice(listing.currentPrice))
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(NeonTheme.accentEmerald)
+      if let size = listing.groupSize, size > 1 {
+        VStack(alignment: .trailing, spacing: 2) {
+          groupRolePill
+          Text("\(size) units")
+            .font(.caption2)
+            .foregroundStyle(NeonTheme.textSecondary)
+        }
+      }
+      myPriceAndMarketBlock
     }
     .frame(minHeight: 44)
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(listing.productName), size \(listing.size), \(ruleBadgeLabel), price \(formatPrice(listing.currentPrice))")
+    .accessibilityLabel("\(listing.productName), size \(listing.size), \(ruleBadgeLabel), \(groupRoleAccessibilityLabel), price \(formatPrice(listing.currentPrice))")
     .accessibilityHint(isSelectionMode ? "Double tap to select" : "Double tap to edit pricing rule")
   }
 
@@ -845,6 +997,92 @@ private struct RepricingRowView: View {
       .padding(.horizontal, 8)
       .padding(.vertical, 3)
       .background(NeonTheme.accentCyan.opacity(0.15), in: Capsule())
+  }
+
+  /// Leader (crown, amber) or Synced (link, gray) — shown when groupSize > 1.
+  private var groupRolePill: some View {
+    Group {
+      if listing.isGroupLeader == true {
+        HStack(spacing: 4) {
+          Image(systemName: "crown.fill")
+            .font(.system(size: 10, weight: .semibold))
+          Text("Leader")
+            .font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(leaderPillColor)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(leaderPillColor.opacity(0.2), in: Capsule())
+        .overlay(Capsule().stroke(leaderPillColor.opacity(0.4), lineWidth: 1))
+      } else {
+        HStack(spacing: 4) {
+          Image(systemName: "link")
+            .font(.system(size: 10, weight: .semibold))
+          Text("Synced")
+            .font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(NeonTheme.textSecondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().stroke(NeonTheme.border.opacity(0.5), lineWidth: 1))
+      }
+    }
+  }
+
+  private var leaderPillColor: Color {
+    Color(red: 245/255, green: 158/255, blue: 11/255) // amber-500
+  }
+
+  /// My Price (teal) and Market (gray) with optional Flex — matches web.
+  private var myPriceAndMarketBlock: some View {
+    VStack(alignment: .trailing, spacing: 4) {
+      HStack(spacing: 12) {
+        VStack(alignment: .trailing, spacing: 2) {
+          HStack(spacing: 4) {
+            Image(systemName: "dollarsign")
+              .font(.system(size: 9, weight: .semibold))
+            Text("MY PRICE")
+              .font(.system(size: 9, weight: .semibold))
+          }
+          .foregroundStyle(NeonTheme.accentCyan)
+          Text(formatPrice(listing.currentPrice))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(NeonTheme.accentCyan)
+        }
+        VStack(alignment: .trailing, spacing: 2) {
+          HStack(spacing: 4) {
+            Image(systemName: "chart.line.downtrend.xyaxis")
+              .font(.system(size: 9, weight: .semibold))
+            Text("MARKET")
+              .font(.system(size: 9, weight: .semibold))
+          }
+          .foregroundStyle(NeonTheme.textSecondary)
+          Text(marketPriceLabel)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(NeonTheme.textSecondary)
+        }
+      }
+      Text("Flex: $\(flexPriceLabel)")
+        .font(.caption2)
+        .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+    }
+  }
+
+  private var marketPriceLabel: String {
+    guard let ask = listing.lowestAsk, ask > 0 else { return "—" }
+    return formatPrice(ask)
+  }
+
+  private var flexPriceLabel: String {
+    guard let flex = listing.flexLowestAsk, flex > 0 else { return "-" }
+    return flex >= 1 ? "\(Int(flex))" : String(format: "%.2f", flex)
+  }
+
+  private var groupRoleAccessibilityLabel: String {
+    guard let size = listing.groupSize, size > 1 else { return "" }
+    if listing.isGroupLeader == true { return "Leader, \(size) units" }
+    return "Synced, \(size) units"
   }
 
   /// Size in a pill matching web purchases/deliveries (Neon: bg-white/5, border, rounded).

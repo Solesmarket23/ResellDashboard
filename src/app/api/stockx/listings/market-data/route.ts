@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
+import { getAdminDb } from '@/lib/firebase/admin';
 
 function parseStockXMoneyToDollars(raw: any): number | null {
   if (raw === null || raw === undefined) return null;
@@ -11,17 +12,58 @@ function parseStockXMoneyToDollars(raw: any): number | null {
   return n >= 1000 ? n / 100 : n;
 }
 
+function getBearerToken(request: NextRequest): string | null {
+  const raw = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+  const m = raw.match(/^Bearer\s+(.+)$/i);
+  const t = (m?.[1] || '').trim();
+  return t ? t : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = cookies();
-    let accessToken = cookieStore.get('stockx_access_token')?.value;
-    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+    let accessToken: string | null = null;
+    let refreshToken: string | null = null;
+    let usedCookieAuth = false;
+
+    const bearer = getBearerToken(request);
+    if (bearer) {
+      const { resolveNativeAuthUserId } = await import('@/lib/nativeAuthResolver');
+      const uid = await resolveNativeAuthUserId(request);
+      if (!uid) {
+        return NextResponse.json({ error: 'Invalid or missing Bearer token' }, { status: 401 });
+      }
+      const adminDb = getAdminDb();
+      if (!adminDb) {
+        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+      }
+      const userSnap = await adminDb.collection('users').doc(uid).get();
+      const userData = (userSnap.data() || {}) as any;
+      const stockxTokens = userData?.stockxTokens || {};
+      accessToken = String(stockxTokens?.access_token || '').trim();
+      refreshToken = String(stockxTokens?.refresh_token || '').trim();
+      const expiresAt = Number(stockxTokens?.expires_at || 0);
+      if (expiresAt && Date.now() > expiresAt - 60_000 && refreshToken) {
+        const refreshed = await refreshStockXTokens(refreshToken);
+        if (refreshed.success && refreshed.accessToken) {
+          accessToken = refreshed.accessToken;
+          refreshToken = refreshed.refreshToken || refreshToken;
+        }
+      }
+    }
+
+    if (!accessToken) {
+      accessToken = cookieStore.get('stockx_access_token')?.value ?? null;
+      refreshToken = cookieStore.get('stockx_refresh_token')?.value ?? null;
+      usedCookieAuth = true;
+    }
 
     if (!accessToken) {
       return NextResponse.json({ error: 'No access token found' }, { status: 401 });
     }
 
-    const { listings } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { listings } = body;
     
     if (!listings || !Array.isArray(listings)) {
       return NextResponse.json({ error: 'Invalid listings data' }, { status: 400 });
@@ -120,9 +162,7 @@ export async function POST(request: NextRequest) {
     }
 
     const res = NextResponse.json({ success: true, marketData: results });
-    // If we refreshed accessToken, propagate it to the browser cookies.
-    // (We don't have the updated refresh token here; refreshStockXTokens returns it optionally.)
-    if (accessToken && accessToken !== cookieStore.get('stockx_access_token')?.value) {
+    if (usedCookieAuth && accessToken && accessToken !== cookieStore.get('stockx_access_token')?.value) {
       setStockXTokenCookies(res, accessToken, refreshToken);
     }
     return res;

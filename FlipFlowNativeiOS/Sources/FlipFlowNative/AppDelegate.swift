@@ -1,7 +1,21 @@
 import UIKit
 import UserNotifications
 import FirebaseCore
+import FirebaseMessaging
 import GoogleSignIn
+
+/// Notifications for buybox push: open Repricing to a specific listing.
+enum BuyboxPushNotification {
+  static let openListing = Notification.Name("BuyboxPushOpenListing")
+  static let listingIdKey = "listingId"
+  static let productNameKey = "productName"
+}
+
+/// FCM token for registering with backend when user is signed in.
+enum PushTokenHolder {
+  static var currentFCMToken: String?
+  static let tokenDidUpdate = Notification.Name("PushTokenDidUpdate")
+}
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
   override init() {
@@ -50,6 +64,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
           options.bundleID = actualBid
         }
         FirebaseApp.configure(options: options)
+        Messaging.messaging().delegate = self
       } else {
         let bid = Bundle.main.bundleIdentifier ?? "nil"
         let plistBid = (NSDictionary(contentsOfFile: path)?["BUNDLE_ID"] as? String) ?? "nil"
@@ -58,6 +73,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     } else {
       let bid = Bundle.main.bundleIdentifier ?? "nil"
       NSLog("⚠️ Firebase not configured: missing GoogleService-Info.plist in app bundle (bundleId=%@).", bid)
+    }
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    application.registerForRemoteNotifications()
+    if FirebaseApp.app() != nil {
+      Messaging.messaging().token { token, _ in
+        if let t = token {
+          PushTokenHolder.currentFCMToken = t
+          NotificationCenter.default.post(name: PushTokenHolder.tokenDidUpdate, object: nil)
+        }
+      }
     }
     return true
   }
@@ -88,6 +113,38 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
     completionHandler([.banner, .sound, .badge, .list])
+  }
+
+  /// User tapped the notification → open Repricing to the listing that lost buybox.
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let userInfo = response.notification.request.content.userInfo
+    let type = userInfo["type"] as? String
+    if type == "buybox_lost",
+       let listingId = (userInfo["listingId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !listingId.isEmpty {
+      let productName = (userInfo["productName"] as? String) ?? ""
+      NotificationCenter.default.post(
+        name: BuyboxPushNotification.openListing,
+        object: nil,
+        userInfo: [
+          BuyboxPushNotification.listingIdKey: listingId,
+          BuyboxPushNotification.productNameKey: productName,
+        ]
+      )
+    }
+    completionHandler()
+  }
+}
+
+extension AppDelegate: MessagingDelegate {
+  func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+    let token = fcmToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+    PushTokenHolder.currentFCMToken = token?.isEmpty == false ? token : nil
+    NotificationCenter.default.post(name: PushTokenHolder.tokenDidUpdate, object: nil)
   }
 }
 
