@@ -148,9 +148,21 @@ private struct RepricingScreen: View {
         BuyboxPushNotification.productNameKey: productName,
       ]
     )
-    // If we're already on Repricing, expand the row so the user sees the effect.
-    if !listingId.isEmpty, listingId != "test-buybox" {
+    if listingId == "test-buybox" {
+      toastMessage = "No listings to expand (load listings first)"
+      Task { @MainActor in
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        toastMessage = nil
+      }
+      return
+    }
+    // Defer expand so it runs after the menu dismisses; otherwise the state update can be lost.
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 350_000_000) // 0.35s
       expandedListingId = listingId
+      toastMessage = "Opened first listing"
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
+      toastMessage = nil
     }
   }
 
@@ -191,16 +203,11 @@ private struct RepricingScreen: View {
               UIImpactFeedbackGenerator(style: .light).impactOccurred()
               isRefreshingFromButton = true
               Task {
-                await vm.refresh()
+                await vm.refresh(forceRefresh: true)
                 await MainActor.run { isRefreshingFromButton = false }
               }
             } label: {
-              if isRefreshInProgress {
-                ProgressView()
-                  .scaleEffect(0.85)
-              } else {
-                Label("Refresh listings", systemImage: "arrow.clockwise")
-              }
+              Label("Refresh listings", systemImage: "arrow.clockwise")
             }
             .disabled(isRefreshInProgress)
             Menu {
@@ -234,7 +241,7 @@ private struct RepricingScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .stockXAuthReturn)) { _ in
           print("[Repricing] StockX auth return: dismissing Safari and refreshing listings.")
           showWebSheet = false
-          Task { await vm.refresh() }
+          Task { await vm.refresh(forceRefresh: true) }
         }
         .onChange(of: pendingBuyboxListingId) { newId in
           if let id = newId, !id.isEmpty {
@@ -246,6 +253,13 @@ private struct RepricingScreen: View {
           if let id = pendingBuyboxListingId, !id.isEmpty {
             expandedListingId = id
             onClearPendingBuybox()
+          }
+        }
+        .task {
+          while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+            if Task.isCancelled { break }
+            await vm.refresh(forceRefresh: false)
           }
         }
       }
@@ -282,7 +296,7 @@ private struct RepricingScreen: View {
       .padding(.bottom, 24)
     }
     .refreshable {
-      await vm.refresh()
+      await vm.refresh(forceRefresh: true)
     }
     .overlay(alignment: .bottom) {
       if let msg = toastMessage {
@@ -294,7 +308,7 @@ private struct RepricingScreen: View {
   private var headerSection: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 8) {
-        Text("StockX Automated Repricing")
+        Text("StockX Repricing")
           .font(.title2.weight(.bold))
           .foregroundStyle(
             LinearGradient(
@@ -309,10 +323,10 @@ private struct RepricingScreen: View {
             .scaleEffect(0.9)
         }
       }
-      Text("Optimize your listing prices with intelligent repricing strategies")
+      Text("Set rules and min/max per listing. Refresh to pull latest market data.")
         .font(.subheadline)
         .foregroundStyle(NeonTheme.textSecondary)
-      Text("Tip: Use the web dashboard for full rules, auto-repricing, and market data.")
+      Text("For batch rules and full market data, use the web dashboard.")
         .font(.caption)
         .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
     }
@@ -399,14 +413,9 @@ private struct RepricingScreen: View {
 
   private var loadingCard: some View {
     VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 12) {
-        ProgressView()
-          .tint(NeonTheme.accentCyan)
-          .scaleEffect(0.9)
-        Text("Loading listings…")
-          .font(.subheadline)
-          .foregroundStyle(NeonTheme.textSecondary)
-      }
+      Text("Loading listings…")
+        .font(.subheadline)
+        .foregroundStyle(NeonTheme.textSecondary)
       .padding(.bottom, 8)
       ForEach(0..<6, id: \.self) { _ in
         skeletonRow
@@ -455,7 +464,7 @@ private struct RepricingScreen: View {
           UIImpactFeedbackGenerator(style: .light).impactOccurred()
           isRefreshingFromButton = true
           Task {
-            await vm.refresh()
+            await vm.refresh(forceRefresh: true)
             await MainActor.run { isRefreshingFromButton = false }
           }
         } label: {
@@ -482,14 +491,6 @@ private struct RepricingScreen: View {
   private var statsAndListSection: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
-        Image(systemName: "tag.fill")
-          .foregroundStyle(NeonTheme.accentCyan)
-        let total = vm.totalCount ?? vm.listings.count
-        let showing = filteredAndSortedListings.count
-        Text(total > 0 ? (showing == total ? "\(total) listing\(total == 1 ? "" : "s")" : "\(showing) of \(total) listings") : "")
-          .font(.subheadline.weight(.medium))
-          .foregroundStyle(NeonTheme.textSecondary)
-        Spacer()
         Button {
           UIImpactFeedbackGenerator(style: .light).impactOccurred()
           withAnimation(.easeInOut(duration: 0.2)) {
@@ -501,6 +502,20 @@ private struct RepricingScreen: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(NeonTheme.accentCyan)
         }
+        Spacer()
+        Image(systemName: "square.stack.3d.up.fill")
+          .foregroundStyle(NeonTheme.accentCyan)
+        let total = vm.totalCount ?? vm.listings.count
+        let showing = filteredAndSortedListings.count
+        Text(total > 0 ? (showing == total ? "\(total) listing\(total == 1 ? "" : "s")" : "\(showing) of \(total) listings") : "")
+          .font(.subheadline.weight(.medium))
+          .foregroundStyle(NeonTheme.textSecondary)
+      }
+      if let last = vm.lastMarketDataFetchedAt {
+        let minAgo = max(0, Int(-last.timeIntervalSinceNow / 60))
+        Text("Market: \(minAgo == 0 ? "just now" : "\(minAgo) min ago")")
+          .font(.caption2)
+          .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
       }
       if isSelectionMode && !selectedListingIds.isEmpty {
         batchApplyBar
@@ -968,10 +983,8 @@ private struct RepricingRowView: View {
           .font(.subheadline.weight(.medium))
           .foregroundStyle(.white)
           .lineLimit(2)
-        HStack(spacing: 6) {
-          ruleBadge
-          sizePill
-        }
+        ruleBadge
+        sizePill
         if let detail = ruleDetailLabel, !detail.isEmpty {
           Text(detail)
             .font(.caption2)
@@ -994,6 +1007,7 @@ private struct RepricingRowView: View {
       }
       myPriceAndMarketBlock
     }
+    .padding(.trailing, 16)
     .frame(minHeight: 44)
     .accessibilityElement(children: .combine)
     .accessibilityLabel("\(listing.productName), size \(listing.size), \(ruleBadgeLabel), \(groupRoleAccessibilityLabel), price \(formatPrice(listing.currentPrice))")
@@ -1009,39 +1023,33 @@ private struct RepricingRowView: View {
       .background(NeonTheme.accentCyan.opacity(0.15), in: Capsule())
   }
 
-  /// Leader (crown, amber) or Synced (link, gray) — shown when groupSize > 1.
+  /// Primary (lowest price in group) or Grouped (same product+size, follows primary) — shown when groupSize > 1.
   private var groupRolePill: some View {
     Group {
       if listing.isGroupLeader == true {
-        HStack(spacing: 4) {
-          Image(systemName: "crown.fill")
-            .font(.system(size: 10, weight: .semibold))
-          Text("Leader")
-            .font(.caption2.weight(.semibold))
+        HStack(spacing: 5) {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 10))
+          Text("Lowest")
+            .font(.caption2.weight(.medium))
         }
-        .foregroundStyle(leaderPillColor)
+        .foregroundStyle(NeonTheme.accentCyan)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(leaderPillColor.opacity(0.2), in: Capsule())
-        .overlay(Capsule().stroke(leaderPillColor.opacity(0.4), lineWidth: 1))
+        .background(NeonTheme.accentCyan.opacity(0.12), in: Capsule())
       } else {
-        HStack(spacing: 4) {
-          Image(systemName: "link")
-            .font(.system(size: 10, weight: .semibold))
-          Text("Synced")
-            .font(.caption2.weight(.semibold))
+        HStack(spacing: 5) {
+          Image(systemName: "square.stack.fill")
+            .font(.system(size: 9))
+          Text("Grouped")
+            .font(.caption2.weight(.medium))
         }
         .foregroundStyle(NeonTheme.textSecondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Color.white.opacity(0.06), in: Capsule())
-        .overlay(Capsule().stroke(NeonTheme.border.opacity(0.5), lineWidth: 1))
+        .background(NeonTheme.textSecondary.opacity(0.08), in: Capsule())
       }
     }
-  }
-
-  private var leaderPillColor: Color {
-    Color(red: 245/255, green: 158/255, blue: 11/255) // amber-500
   }
 
   /// My Price (teal) and Market (gray) with optional Flex — matches web.
@@ -1054,6 +1062,8 @@ private struct RepricingRowView: View {
               .font(.system(size: 9, weight: .semibold))
             Text("MY PRICE")
               .font(.system(size: 9, weight: .semibold))
+              .lineLimit(1)
+              .fixedSize(horizontal: true, vertical: false)
           }
           .foregroundStyle(NeonTheme.accentCyan)
           Text(formatPrice(listing.currentPrice))
@@ -1066,6 +1076,8 @@ private struct RepricingRowView: View {
               .font(.system(size: 9, weight: .semibold))
             Text("MARKET")
               .font(.system(size: 9, weight: .semibold))
+              .lineLimit(1)
+              .fixedSize(horizontal: true, vertical: false)
           }
           .foregroundStyle(NeonTheme.textSecondary)
           Text(marketPriceLabel)
@@ -1091,15 +1103,18 @@ private struct RepricingRowView: View {
 
   private var groupRoleAccessibilityLabel: String {
     guard let size = listing.groupSize, size > 1 else { return "" }
-    if listing.isGroupLeader == true { return "Leader, \(size) units" }
-    return "Synced, \(size) units"
+    if listing.isGroupLeader == true { return "Lowest price in group, \(size) units" }
+    return "Grouped, \(size) units"
   }
 
   /// Size in a pill matching web purchases/deliveries (Neon: bg-white/5, border, rounded).
+  /// Kept on one line and not truncated via fixedSize + lineLimit(1).
   private var sizePill: some View {
     Text(sizePillLabel)
       .font(.caption.weight(.semibold))
       .foregroundStyle(NeonTheme.textSecondary)
+      .lineLimit(1)
+      .fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))

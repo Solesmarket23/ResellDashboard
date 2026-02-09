@@ -9,16 +9,22 @@ final class RepricingViewModel: ObservableObject {
   @Published private(set) var errorMessage: String?
   /// True when user is signed in but StockX isn't available (e.g. site-password only, or not connected on web).
   @Published private(set) var needsStockXAuth: Bool = false
+  /// When we last fetched market data (for cache TTL and "prices as of" UI).
+  @Published private(set) var lastMarketDataFetchedAt: Date?
 
   private let repo: RepricingRepositoryProtocol
   private let getIDToken: (Bool) async throws -> String?
+  /// Market data cache: listingId (normalized) -> (lowestAsk, flexLowestAsk). TTL = marketDataCacheTTL.
+  private var marketDataCache: [String: (lowestAsk: Double?, flexLowestAsk: Double?)] = [:]
+  private static let marketDataCacheTTL: TimeInterval = 5 * 60 // 5 minutes
 
   init(repo: RepricingRepositoryProtocol, getIDToken: @escaping (Bool) async throws -> String?) {
     self.repo = repo
     self.getIDToken = getIDToken
   }
 
-  func refresh() async {
+  /// If false, market data is used from cache when < 5 min old to avoid redundant StockX calls.
+  func refresh(forceRefresh: Bool = false) async {
     print("[Repricing] refresh() called.")
     errorMessage = nil
     needsStockXAuth = false
@@ -63,20 +69,53 @@ final class RepricingViewModel: ObservableObject {
         merged[i].fetchedIndex = i
       }
       if !merged.isEmpty {
-        let toFetch = Array(merged.prefix(25)).map { (listingId: $0.listingId, productId: $0.productId, variantId: $0.variantId) }
-        do {
-          let marketMap = try await repo.fetchMarketData(idToken: token, listings: toFetch)
-          let norm = Self.normalizeListingId
+        let norm = Self.normalizeListingId
+        let cacheValid: Bool = {
+          guard !forceRefresh, let last = lastMarketDataFetchedAt, !marketDataCache.isEmpty else { return false }
+          return Date().timeIntervalSince(last) < Self.marketDataCacheTTL
+        }()
+
+        if cacheValid, let last = lastMarketDataFetchedAt {
           for i in merged.indices {
             let key = norm(merged[i].listingId)
-            if let pair = marketMap[key] ?? marketMap[merged[i].listingId] {
+            if let pair = marketDataCache[key] {
               merged[i].lowestAsk = pair.lowestAsk
               merged[i].flexLowestAsk = pair.flexLowestAsk
             }
           }
-          print("[Repricing] refresh: merged market data for \(min(merged.count, 25)) listings.")
-        } catch {
-          print("[Repricing] refresh: market data failed: \(error). Continuing without.")
+          let minAgo = Int(-last.timeIntervalSinceNow / 60)
+          print("[Repricing] refresh: using cached market data (\(minAgo) min old).")
+        } else {
+          let newestFirst = merged.sorted { $0.fetchedIndex < $1.fetchedIndex }
+          let toFetch = Array(newestFirst.prefix(100)).map { (listingId: $0.listingId, productId: $0.productId, variantId: $0.variantId) }
+          do {
+            let marketMap = try await repo.fetchMarketData(idToken: token, listings: toFetch)
+            var newCache: [String: (lowestAsk: Double?, flexLowestAsk: Double?)] = [:]
+            for i in merged.indices {
+              let key = norm(merged[i].listingId)
+              if let pair = marketMap[key] ?? marketMap[merged[i].listingId] {
+                merged[i].lowestAsk = pair.lowestAsk
+                merged[i].flexLowestAsk = pair.flexLowestAsk
+                newCache[key] = pair
+              }
+            }
+            marketDataCache = newCache
+            lastMarketDataFetchedAt = Date()
+            print("[Repricing] refresh: merged market data for \(min(merged.count, 100)) listings (newest first), cache updated.")
+          } catch {
+            if !marketDataCache.isEmpty {
+              for i in merged.indices {
+                let key = norm(merged[i].listingId)
+                if let pair = marketDataCache[key] {
+                  merged[i].lowestAsk = pair.lowestAsk
+                  merged[i].flexLowestAsk = pair.flexLowestAsk
+                }
+              }
+              print("[Repricing] refresh: market data failed, using stale cache.")
+            } else {
+              print("[Repricing] refresh: market data failed: \(error). Continuing without.")
+            }
+          }
         }
       }
       listings = merged
