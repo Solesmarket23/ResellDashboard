@@ -194,6 +194,10 @@ Based on your StockX API integration and the comprehensive API documentation, he
 | `/selling/orders/{id}/shipping-document` | Generate labels | Fulfillment |
 | `/selling/listings/{id}/operations` | Listing history | Analytics |
 
+### **📦 Shipping documents (Direct orders only)**
+StockX: `GET /v2/selling/orders/{orderNumber}/shipping-document` (JSON list) and `GET .../shipping-document/{shippingId}` (PDF).  
+**Our routes:** `GET /api/stockx/shipping-document?orderNumber=06-XXX` (list), `GET /api/stockx/shipping-document/pdf?orderNumber=06-XXX&shippingId=S-123` (download PDF). Use in order management to offer “Get shipping label” for Direct orders.
+
 ---
 
 ## 🎯 **Next Steps & Recommendations**
