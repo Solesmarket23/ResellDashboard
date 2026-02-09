@@ -99,7 +99,7 @@ private struct RepricingScreen: View {
   @State private var isApplyingBatch: Bool = false
   @State private var batchError: String?
   @State private var toastMessage: String?
-  @State private var selectedSizeFilter: String?
+  @State private var selectedSizeFilters: Set<String> = []
   @State private var filterNotWinningBuyboxOnly: Bool = false
 
   private var isRefreshInProgress: Bool { vm.isLoading || isRefreshingFromButton }
@@ -112,12 +112,15 @@ private struct RepricingScreen: View {
     "S", "M", "L", "XL", "XXL",
   ]
 
-  private func sizeMatchesFilter(_ size: String, selected: String?) -> Bool {
-    guard let selected = selected, selected != "All" else { return true }
-    let a = size.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let b = selected.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if a.isEmpty || b.isEmpty { return false }
-    return a == b
+  private func normalizedSize(_ size: String) -> String {
+    size.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  private func listingMatchesSizeFilter(_ size: String, selectedSizes: Set<String>) -> Bool {
+    if selectedSizes.isEmpty { return true }
+    let a = normalizedSize(size)
+    if a.isEmpty { return false }
+    return selectedSizes.contains { normalizedSize($0) == a }
   }
 
   private func isNotWinningBuybox(_ listing: RepricingListing) -> Bool {
@@ -156,8 +159,8 @@ private struct RepricingScreen: View {
     var base = q.isEmpty ? vm.listings : vm.listings.filter {
       $0.productName.lowercased().contains(q) || $0.size.lowercased().contains(q)
     }
-    if let sizeFilter = selectedSizeFilter, sizeFilter != "All" {
-      base = base.filter { sizeMatchesFilter($0.size, selected: sizeFilter) }
+    if !selectedSizeFilters.isEmpty {
+      base = base.filter { listingMatchesSizeFilter($0.size, selectedSizes: selectedSizeFilters) }
     }
     if filterNotWinningBuyboxOnly {
       base = base.filter { isNotWinningBuybox($0) }
@@ -182,8 +185,8 @@ private struct RepricingScreen: View {
         .navigationTitle("Repricing")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-          ToolbarItem(placement: .topBarTrailing) {
+        .navigationBarItems(trailing:
+          HStack(spacing: 12) {
             Button {
               UIImpactFeedbackGenerator(style: .light).impactOccurred()
               isRefreshingFromButton = true
@@ -200,8 +203,6 @@ private struct RepricingScreen: View {
               }
             }
             .disabled(isRefreshInProgress)
-          }
-          ToolbarItem(placement: .topBarTrailing) {
             Menu {
               Button {
                 webSheetURL = URL(string: "https://www.solesmarket.com/dashboard?section=stockx-repricing")!
@@ -223,7 +224,7 @@ private struct RepricingScreen: View {
               Image(systemName: "ellipsis.circle")
             }
           }
-        }
+        )
         .sheet(isPresented: $showWebSheet) {
           SafariView(url: webSheetURL)
             .onDisappear {
@@ -235,7 +236,7 @@ private struct RepricingScreen: View {
           showWebSheet = false
           Task { await vm.refresh() }
         }
-        .onChange(of: pendingBuyboxListingId) { _, newId in
+        .onChange(of: pendingBuyboxListingId) { newId in
           if let id = newId, !id.isEmpty {
             expandedListingId = id
             onClearPendingBuybox()
@@ -602,11 +603,20 @@ private struct RepricingScreen: View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 8) {
         ForEach(Self.commonSizeFilters, id: \.self) { size in
-          let isSelected = (size == "All" && selectedSizeFilter == nil) || selectedSizeFilter == size
+          let isAll = size == "All"
+          let isSelected = isAll ? selectedSizeFilters.isEmpty : selectedSizeFilters.contains(size)
           Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.easeInOut(duration: 0.2)) {
-              selectedSizeFilter = size == "All" ? nil : size
+              if isAll {
+                selectedSizeFilters.removeAll()
+              } else {
+                if selectedSizeFilters.contains(size) {
+                  selectedSizeFilters.remove(size)
+                } else {
+                  selectedSizeFilters.insert(size)
+                }
+              }
             }
           } label: {
             Text(size)

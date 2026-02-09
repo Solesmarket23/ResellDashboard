@@ -212,8 +212,16 @@ private struct MarketDataPayload: Decodable {
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    lowestAsk = (try? c.decode(Double.self, forKey: .lowestAsk)) ?? (try? c.decode(Int.self, forKey: .lowestAsk)).map(Double.init) ?? (try? c.decode(Double.self, forKey: .lowest_ask)) ?? (try? c.decode(Int.self, forKey: .lowest_ask)).map(Double.init)
-    flexLowestAsk = (try? c.decode(Double.self, forKey: .flexLowestAsk)) ?? (try? c.decode(Int.self, forKey: .flexLowestAsk)).map(Double.init) ?? (try? c.decode(Double.self, forKey: .flex_lowest_ask)) ?? (try? c.decode(Int.self, forKey: .flex_lowest_ask)).map(Double.init)
+    lowestAsk = Self.decodeOptionalDouble(c, keys: (.lowestAsk, .lowest_ask))
+    flexLowestAsk = Self.decodeOptionalDouble(c, keys: (.flexLowestAsk, .flex_lowest_ask))
+  }
+
+  private static func decodeOptionalDouble(_ c: KeyedDecodingContainer<CodingKeys>, keys: (CodingKeys, CodingKeys)) -> Double? {
+    if let d = try? c.decode(Double.self, forKey: keys.0) { return d }
+    if let i = try? c.decode(Int.self, forKey: keys.0) { return Double(i) }
+    if let d = try? c.decode(Double.self, forKey: keys.1) { return d }
+    if let i = try? c.decode(Int.self, forKey: keys.1) { return Double(i) }
+    return nil
   }
 }
 
