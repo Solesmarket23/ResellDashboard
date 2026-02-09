@@ -24,15 +24,11 @@ function getBearerToken(request: NextRequest): string | null {
 }
 
 async function resolveAuthedUserId(request: NextRequest): Promise<string | null> {
-  // Preferred for native apps: Firebase ID token
   const bearer = getBearerToken(request);
   if (bearer) {
-    const { getAdminAuth } = await import('@/lib/firebase/admin');
-    const adminAuth = getAdminAuth();
-    if (!adminAuth) return null;
-    const decoded = await adminAuth.verifyIdToken(bearer);
-    const uid = (decoded?.uid || '').trim();
-    return uid || null;
+    const { resolveNativeAuthUserId } = await import('@/lib/nativeAuthResolver');
+    const uid = await resolveNativeAuthUserId(request);
+    if (uid) return uid;
   }
 
   // Web fallback: site-password cookie.

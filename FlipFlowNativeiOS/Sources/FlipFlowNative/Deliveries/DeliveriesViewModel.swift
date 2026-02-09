@@ -51,7 +51,7 @@ final class DeliveriesViewModel: ObservableObject {
       defer { isLoading = false }
       do {
         let resp = try await repo.fetchDeliveries(userId: userId, includeLiveTracking: true, includeArchived: includeArchived)
-        deliveries = resp.deliveries ?? []
+        deliveries = Self.sortedForDisplay(resp.deliveries ?? [])
         lastSyncIso = resp.lastSync
       } catch {
         if shouldIgnore(error) { return }
@@ -63,7 +63,7 @@ final class DeliveriesViewModel: ObservableObject {
     isLoading = true
     do {
       let lite = try await repo.fetchDeliveries(userId: userId, includeLiveTracking: false, includeArchived: includeArchived)
-      deliveries = lite.deliveries ?? []
+      deliveries = Self.sortedForDisplay(lite.deliveries ?? [])
       lastSyncIso = lite.lastSync
       isLoading = false
     } catch {
@@ -77,7 +77,7 @@ final class DeliveriesViewModel: ObservableObject {
     isHydrating = true
     do {
       let full = try await repo.fetchDeliveries(userId: userId, includeLiveTracking: true, includeArchived: includeArchived)
-      deliveries = full.deliveries ?? []
+      deliveries = Self.sortedForDisplay(full.deliveries ?? [])
       lastSyncIso = full.lastSync
     } catch {
       // Don't clobber the lite list; just show an error banner.
@@ -86,6 +86,21 @@ final class DeliveriesViewModel: ObservableObject {
       }
     }
     isHydrating = false
+  }
+
+  /// Canonical sort so list order is stable across lite vs full fetch (avoids reordering when phase 2 completes).
+  private static func sortedForDisplay(_ items: [DeliveryItem]) -> [DeliveryItem] {
+    items.sorted { a, b in
+      let dateStrA = a.estimatedDelivery ?? a.actualDelivery ?? ""
+      let dateStrB = b.estimatedDelivery ?? b.actualDelivery ?? ""
+      let dateA = DateParsing.bestEffortDate(from: dateStrA) ?? .distantFuture
+      let dateB = DateParsing.bestEffortDate(from: dateStrB) ?? .distantFuture
+      if dateA != dateB { return dateA < dateB }
+      let updateA = a.lastUpdate ?? ""
+      let updateB = b.lastUpdate ?? ""
+      if updateA != updateB { return updateA > updateB }
+      return a.id.compare(b.id) == .orderedAscending
+    }
   }
 
   func sendTestNotificationToast() {
@@ -371,8 +386,9 @@ enum DeliveryStatusFilter: String, CaseIterable, Identifiable {
   case delivered
   case shipped
   case inTransit
-  case delayed
   case outForDelivery
+  case exception
+  case unknown
 
   var id: String { rawValue }
   var label: String {
@@ -384,8 +400,9 @@ enum DeliveryStatusFilter: String, CaseIterable, Identifiable {
     case .delivered: return "Delivered"
     case .shipped: return "Shipped"
     case .inTransit: return "In transit"
-    case .delayed: return "Delayed"
     case .outForDelivery: return "Out for delivery"
+    case .exception: return "Exception"
+    case .unknown: return "Unknown"
     }
   }
 
@@ -399,10 +416,12 @@ enum DeliveryStatusFilter: String, CaseIterable, Identifiable {
       return item.status.lowercased() == "shipped"
     case .inTransit:
       return item.status.lowercased() == "in_transit" || item.status.lowercased() == "in transit"
-    case .delayed:
-      return item.status.lowercased() == "delayed" || item.status.lowercased() == "exception"
     case .outForDelivery:
       return item.status.lowercased() == "out_for_delivery" || item.status.lowercased() == "out for delivery"
+    case .exception:
+      return item.status.lowercased() == "exception" || item.status.lowercased() == "delayed"
+    case .unknown:
+      return item.status.lowercased() == "unknown" || item.status.lowercased().isEmpty
     case .today, .tomorrow, .thisWeek:
       // Use estimatedDelivery first, then actualDelivery if delivered
       let dateStr = (item.estimatedDelivery?.isEmpty == false ? item.estimatedDelivery : item.actualDelivery) ?? ""

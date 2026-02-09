@@ -148,6 +148,10 @@ export class FedExTrackingAPI {
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 429) {
+          const hint = this.parse429RetryHint(errorText);
+          throw new Error(`FedEx rate limit or quota exceeded. ${hint} Original: ${errorText}`);
+        }
         console.error(`❌ FedEx API error: ${response.status} ${errorText}`);
         throw new Error(`FedEx API error: ${response.status} ${errorText}`);
       }
@@ -167,6 +171,19 @@ export class FedExTrackingAPI {
         error: error instanceof Error ? error.message : 'Unknown FedEx API error'
       };
     }
+  }
+
+  /**
+   * Parse FedEx 429 body for a user-friendly retry hint.
+   * - Daily quota: "Retry after 12:00AM GMT"
+   * - Rate limit: "Retry after 10 seconds" / "too many requests in a short duration"
+   */
+  private parse429RetryHint(errorText: string): string {
+    const lower = errorText.toLowerCase();
+    if (lower.includes('daily') && lower.includes('quota')) return 'Daily quota exceeded. Retry after 12:00 AM GMT.';
+    if (lower.includes('per project') && lower.includes('quota')) return 'Project daily quota exceeded. Retry after 12:00 AM GMT.';
+    if (lower.includes('rate limit') || lower.includes('short duration')) return 'Rate limit exceeded. Retry after 10 seconds.';
+    return 'Retry later.';
   }
 
   private parseTrackingResponse(response: FedExTrackingResponse, trackingNumber: string): TrackingInfo {

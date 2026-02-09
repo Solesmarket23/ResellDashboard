@@ -1,28 +1,30 @@
 import SwiftUI
 
-// #region agent log helper
+// #region agent log helper (runs off main thread to avoid login lag and CoreGraphics NaN from layout)
 private func agentPostLog(_ location: String, _ message: String, runId: String, hypothesisId: String, data: [String: String] = [:]) {
-  guard let url = URL(string: "http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e") else { return }
-  let payload: [String: Any] = [
-    "location": location,
-    "message": message,
-    "runId": runId,
-    "hypothesisId": hypothesisId,
-    "data": data,
-    "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-  ]
-  // Also print to Xcode console so this works on real devices (127.0.0.1 isn't reachable from iPhone).
-  if let line = try? String(data: JSONSerialization.data(withJSONObject: payload), encoding: .utf8) {
-    print("AGENTLOG \(line)")
+  let dataCopy = data
+  DispatchQueue.global(qos: .utility).async {
+    guard let url = URL(string: "http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e") else { return }
+    let payload: [String: Any] = [
+      "location": location,
+      "message": message,
+      "runId": runId,
+      "hypothesisId": hypothesisId,
+      "data": dataCopy,
+      "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+    ]
+    if let line = try? String(data: JSONSerialization.data(withJSONObject: payload), encoding: .utf8) {
+      print("AGENTLOG \(line)")
+    }
+    #if targetEnvironment(simulator)
+      guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+      var req = URLRequest(url: url)
+      req.httpMethod = "POST"
+      req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      req.httpBody = body
+      URLSession.shared.dataTask(with: req).resume()
+    #endif
   }
-  #if targetEnvironment(simulator)
-    guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-    var req = URLRequest(url: url)
-    req.httpMethod = "POST"
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = body
-    URLSession.shared.dataTask(with: req).resume()
-  #endif
 }
 // #endregion
 
@@ -39,10 +41,14 @@ struct SignInView: View {
   var body: some View {
     NeonScreen {
       GeometryReader { proxy in
+        let safeHeight: CGFloat = {
+          let h = proxy.size.height
+          guard h.isFinite, h > 0 else { return 400 }
+          return h
+        }()
         ScrollView(.vertical, showsIndicators: false) {
           centeredContent
-            // Center on large screens, still scroll on small screens
-            .frame(minHeight: proxy.size.height, alignment: .center)
+            .frame(minHeight: safeHeight, alignment: .center)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.bottom, 16)
         }
@@ -67,6 +73,14 @@ struct SignInView: View {
       if !newValue {
         sitePasswordFirstResponder = false
         isSigningIn = false
+      } else {
+        // Request focus after the expand animation (0.38s) so the secure field is in the window.
+        Task { @MainActor in
+          try? await Task.sleep(nanoseconds: 450_000_000)
+          if showSitePasswordForm {
+            sitePasswordFirstResponder = true
+          }
+        }
       }
     }
     // #endregion
@@ -212,7 +226,7 @@ struct SignInView: View {
         }
       }
       .padding(.horizontal, 16)
-      .animation(.easeInOut(duration: 0.22), value: showSitePasswordForm)
+      .animation(.easeOut(duration: 0.38), value: showSitePasswordForm)
       // Pre-warm the UIKit secure field so any one-time keyboard/autofill cost happens at launch,
       // not on the first tap of "Use site password".
       .background(
@@ -243,24 +257,35 @@ struct SignInView: View {
         auth.errorMessage = "Unable to find a presenting view controller."
         return
       }
-      Task { await auth.signInWithGoogle(presenting: presenting) }
+      auth.errorMessage = nil
+      isSigningIn = true
+      Task {
+        await auth.signInWithGoogle(presenting: presenting)
+        await MainActor.run { isSigningIn = false }
+      }
     } label: {
       HStack(spacing: 10) {
-        ZStack {
-          Circle()
-            .fill(Color.white.opacity(0.18))
-          Text("G")
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(.white)
+        if isSigningIn {
+          ProgressView()
+            .tint(.white)
+            .scaleEffect(0.9)
+        } else {
+          ZStack {
+            Circle()
+              .fill(Color.white.opacity(0.18))
+            Text("G")
+              .font(.system(size: 14, weight: .bold))
+              .foregroundStyle(.white)
+          }
+          .frame(width: 26, height: 26)
         }
-        .frame(width: 26, height: 26)
-
-        Text("Continue with Google")
+        Text(isSigningIn ? "Opening Google…" : "Continue with Google")
           .font(.headline)
       }
       .foregroundStyle(.white)
     }
     .buttonStyle(NeonPrimaryButtonStyle())
+    .disabled(isSigningIn)
   }
 
   private func attemptSitePasswordSignIn() {
@@ -327,12 +352,13 @@ struct SignInView: View {
       .disabled(isSigningIn || sitePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.top, showSitePasswordForm ? 6 : 0)
+    .padding(.top, showSitePasswordForm ? 8 : 0)
     .opacity(showSitePasswordForm ? 1 : 0)
-    .offset(y: showSitePasswordForm ? 0 : -8)
+    .offset(y: showSitePasswordForm ? 0 : -4)
     .frame(maxHeight: showSitePasswordForm ? 220 : 0)
     .clipped()
     .allowsHitTesting(showSitePasswordForm)
+    .animation(.easeOut(duration: 0.38), value: showSitePasswordForm)
     // #region agent log A3
     .onChange(of: showSitePasswordForm) { newValue in
       let deltaMs = agentTapUptime > 0 ? Int((ProcessInfo.processInfo.systemUptime - agentTapUptime) * 1000) : -1

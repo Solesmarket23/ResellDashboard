@@ -116,3 +116,24 @@ struct NeonPrimaryButtonStyle: ButtonStyle {
   }
 }
 
+/// Neon-styled text field: dark background, cyan border, white text.
+struct NeonTextFieldStyle: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .foregroundStyle(NeonTheme.textPrimary)
+      .tint(NeonTheme.accentCyan)
+      .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .stroke(NeonTheme.border.opacity(0.5), lineWidth: 1)
+      )
+  }
+}
+
+extension View {
+  func neonTextFieldStyle() -> some View {
+    modifier(NeonTextFieldStyle())
+  }
+}

@@ -171,6 +171,9 @@ GMAIL_CLIENT_SECRET
 DEEPGRAM_API_KEY
 ANTHROPIC_API_KEY
 REPLICATE_API_TOKEN
+
+# Optional: for site-password users to use native app StockX (listings, connect). JWT signing secret.
+SITE_SESSION_SECRET
 ```
 
 ## Common Tasks

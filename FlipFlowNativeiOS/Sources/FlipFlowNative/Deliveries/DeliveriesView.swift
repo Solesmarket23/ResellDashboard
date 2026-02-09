@@ -278,16 +278,36 @@ private struct DeliveriesScreen: View {
     return pieces.joined(separator: " • ")
   }
 
+  @ViewBuilder
   private var deliveryStatsGrid: some View {
-    let cols = [GridItem(.flexible()), GridItem(.flexible())]
-    return LazyVGrid(columns: cols, spacing: 10) {
-      ForEach(vm.selectedStats.prefix(4)) { stat in
-        let value = vm.stats[stat] ?? 0
-        let isActive = vm.cardFilter == stat
-        DeliveryStatCard(stat: stat, value: value, isFilterActive: isActive)
-          .onTapGesture {
-            vm.cardFilter = vm.cardFilter == stat ? nil : stat
+    if vm.isLoading || vm.isHydrating {
+      LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+        ForEach(0..<4, id: \.self) { _ in
+          NeonCard {
+            VStack(spacing: 6) {
+              RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 10)
+              RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 20)
+            }
+            .frame(maxWidth: .infinity)
           }
+          .frame(minHeight: 52)
+          .redacted(reason: .placeholder)
+        }
+      }
+    } else {
+      LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+        ForEach(vm.selectedStats.prefix(4)) { stat in
+          let value = vm.stats[stat] ?? 0
+          let isActive = vm.cardFilter == stat
+          DeliveryStatCard(stat: stat, value: value, isFilterActive: isActive)
+            .onTapGesture {
+              vm.cardFilter = vm.cardFilter == stat ? nil : stat
+            }
+        }
       }
     }
   }
@@ -298,7 +318,7 @@ private struct DeliveryRow: View {
 
   var body: some View {
     NeonCard {
-      HStack(alignment: .top, spacing: 12) {
+      HStack(alignment: .center, spacing: 12) {
         DeliveryThumb(urlString: item.productImage)
           .frame(width: 44, height: 44)
 

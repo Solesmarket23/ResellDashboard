@@ -46,18 +46,21 @@ struct DeliveryStatusBadge: View {
 
   var body: some View {
     let s = status.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    // Canonical statuses (match API): shipped, in_transit, out_for_delivery, delivered, exception, unknown. No hyphens in labels.
     let (label, color, icon): (String, Color, String) = {
       switch s {
       case "delivered":
         return ("Delivered", Color.green.opacity(0.95), "checkmark.circle.fill")
       case "out_for_delivery", "out for delivery":
-        return ("Out", NeonTheme.accentCyan.opacity(0.95), "location.fill")
+        return ("Out for delivery", NeonTheme.accentCyan.opacity(0.95), "location.fill")
       case "in_transit", "in transit":
-        return ("Transit", Color.white.opacity(0.85), "truck.fast.fill")
+        return ("In transit", Color.white.opacity(0.85), "truck.box.fill")
       case "shipped":
         return ("Shipped", Color.white.opacity(0.78), "shippingbox.fill")
-      case "delayed", "exception":
-        return ("Delayed", Color.orange.opacity(0.95), "exclamationmark.triangle.fill")
+      case "exception", "delayed":
+        return ("Exception", Color.orange.opacity(0.95), "exclamationmark.triangle.fill")
+      case "unknown":
+        return ("Unknown", Color.white.opacity(0.60), "questionmark.circle.fill")
       default:
         return ("Unknown", Color.white.opacity(0.60), "questionmark.circle.fill")
       }

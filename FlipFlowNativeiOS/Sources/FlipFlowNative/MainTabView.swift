@@ -35,7 +35,7 @@ struct MainTabView: View {
           Label("Dashboard", systemImage: "chart.line.uptrend.xyaxis")
         }
 
-      PlaceholderTab(title: "Repricing", subtitle: "Buttons coming next", systemImage: "tag")
+      RepricingView()
         .tabItem {
           Label("Repricing", systemImage: "tag")
         }

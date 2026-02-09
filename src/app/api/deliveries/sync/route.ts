@@ -117,6 +117,13 @@ function normalizeTrackingError(error: unknown): string | null {
     return 'Live tracking not configured';
   }
 
+  // FedEx 429 (quota or rate limit) — surface retry hint
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota exceeded')) {
+    if (lower.includes('12:00') || lower.includes('12:00am gmt')) return 'FedEx daily quota exceeded — retry after 12:00 AM GMT';
+    if (lower.includes('10 seconds') || lower.includes('short duration')) return 'FedEx rate limit — retry in 10 seconds';
+    return 'FedEx quota or rate limit exceeded — try again later';
+  }
+
   // FedEx auth / permission failures (most common cause of "everything is unknown")
   if (
     lower.includes('fedex authentication failed') ||

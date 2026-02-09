@@ -1,4 +1,6 @@
 // FedEx OAuth2 Authentication Service
+// FedEx auth has IP-level thresholds (burst 3/sec for 5s, avg 1/sec for 2 min). We request a token
+// once and reuse it until near expiry (5-min buffer) to stay under thresholds.
 export interface FedExToken {
   access_token: string;
   token_type: string;

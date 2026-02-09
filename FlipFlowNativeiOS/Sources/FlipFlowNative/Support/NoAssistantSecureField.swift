@@ -1,29 +1,31 @@
 import SwiftUI
 import UIKit
 
-// #region agent log helper
+// #region agent log helper (runs off main thread to avoid login lag)
 private func agentPostLog(_ location: String, _ message: String, runId: String, hypothesisId: String, data: [String: String] = [:]) {
-  guard let url = URL(string: "http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e") else { return }
-  let payload: [String: Any] = [
-    "location": location,
-    "message": message,
-    "runId": runId,
-    "hypothesisId": hypothesisId,
-    "data": data,
-    "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-  ]
-  // Also print to Xcode console so this works on real devices (127.0.0.1 isn't reachable from iPhone).
-  if let line = try? String(data: JSONSerialization.data(withJSONObject: payload), encoding: .utf8) {
-    print("AGENTLOG \(line)")
+  let dataCopy = data
+  DispatchQueue.global(qos: .utility).async {
+    guard let url = URL(string: "http://127.0.0.1:7242/ingest/80c2e612-47e3-4f28-8d98-15f80c4fae0e") else { return }
+    let payload: [String: Any] = [
+      "location": location,
+      "message": message,
+      "runId": runId,
+      "hypothesisId": hypothesisId,
+      "data": dataCopy,
+      "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+    ]
+    if let line = try? String(data: JSONSerialization.data(withJSONObject: payload), encoding: .utf8) {
+      print("AGENTLOG \(line)")
+    }
+    #if targetEnvironment(simulator)
+      guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+      var req = URLRequest(url: url)
+      req.httpMethod = "POST"
+      req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      req.httpBody = body
+      URLSession.shared.dataTask(with: req).resume()
+    #endif
   }
-  #if targetEnvironment(simulator)
-    guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-    var req = URLRequest(url: url)
-    req.httpMethod = "POST"
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = body
-    URLSession.shared.dataTask(with: req).resume()
-  #endif
 }
 // #endregion
 

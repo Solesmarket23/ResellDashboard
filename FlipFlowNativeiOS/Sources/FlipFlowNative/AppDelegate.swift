@@ -67,8 +67,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    // StockX OAuth return: flipflow://stockx-auth?success=1 → app opens; Repricing dismisses Safari and refreshes.
+    if url.scheme?.lowercased() == "flipflow", url.host?.lowercased() == "stockx-auth" {
+      NotificationCenter.default.post(name: .stockXAuthReturn, object: nil, userInfo: ["url": url])
+      return true
+    }
     return GIDSignIn.sharedInstance.handle(url)
   }
+}
+
+extension Notification.Name {
+  static let stockXAuthReturn = Notification.Name("stockXAuthReturn")
 }
 
 extension AppDelegate: UNUserNotificationCenterDelegate {

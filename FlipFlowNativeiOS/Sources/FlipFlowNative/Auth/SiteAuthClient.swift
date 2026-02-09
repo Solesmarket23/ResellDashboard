@@ -5,6 +5,8 @@ struct SiteAuthClient {
     let success: Bool?
     let userId: String?
     let email: String?
+    /// JWT for native API Bearer auth (e.g. StockX). Optional; only set when server has SITE_SESSION_SECRET.
+    let siteSessionToken: String?
   }
 
   let baseURL: URL
