@@ -623,8 +623,8 @@ const Purchases = () => {
           break;
         }
         case 'sku': {
-          const as = String(a?.sku ?? a?.skuCode ?? a?.inventorySku ?? a?.unitNumber ?? '').toLowerCase().trim();
-          const bs = String(b?.sku ?? b?.skuCode ?? b?.inventorySku ?? b?.unitNumber ?? '').toLowerCase().trim();
+          const as = String(a?.pickLocation ?? a?.pick_location ?? a?.sku ?? a?.skuCode ?? a?.inventorySku ?? a?.unitNumber ?? '').toLowerCase().trim();
+          const bs = String(b?.pickLocation ?? b?.pick_location ?? b?.sku ?? b?.skuCode ?? b?.inventorySku ?? b?.unitNumber ?? '').toLowerCase().trim();
           aValue = as;
           bValue = bs;
           break;
@@ -915,7 +915,14 @@ const Purchases = () => {
           break;
         }
         case 'sku': {
-          const raw = purchase?.sku ?? purchase?.skuCode ?? purchase?.inventorySku ?? purchase?.unitNumber ?? '';
+          const raw =
+            purchase?.pickLocation ??
+            purchase?.pick_location ??
+            purchase?.sku ??
+            purchase?.skuCode ??
+            purchase?.inventorySku ??
+            purchase?.unitNumber ??
+            '';
           cellContent = String(raw || '');
           break;
         }
@@ -5371,7 +5378,14 @@ const Purchases = () => {
                   <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.sku}px` }}>
                     <div className="flex items-center justify-center">
                       {(() => {
-                        const raw = purchase?.sku ?? purchase?.skuCode ?? purchase?.inventorySku ?? purchase?.unitNumber ?? '';
+                        const raw =
+                          purchase?.pickLocation ??
+                          purchase?.pick_location ??
+                          purchase?.sku ??
+                          purchase?.skuCode ??
+                          purchase?.inventorySku ??
+                          purchase?.unitNumber ??
+                          '';
                         const trimmed = String(raw || '').trim();
                         if (!trimmed) return <span className={`text-sm ${currentTheme.colors.textSecondary}`}>-</span>;
                         return (

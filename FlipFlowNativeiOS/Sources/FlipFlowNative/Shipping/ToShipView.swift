@@ -50,8 +50,11 @@ struct ToShipView: View {
       await loadMarked()
     }
     .fullScreenCover(item: $orderForVerify) { order in
+      let slot = pickLocation(for: order)
       VerifyOrderSheet(
         order: order,
+        requiredScanValue: slot ?? order.sku,
+        isVerifyingBySlot: slot != nil,
         onClose: { orderForVerify = nil }
       )
     }
@@ -492,14 +495,26 @@ private struct AllocateForOrderResponse: Decodable {
   let location: String?
 }
 
-// MARK: - Verify order (scan to match SKU)
+// MARK: - Verify order (scan to match SKU / pick location)
 
 private struct VerifyOrderSheet: View {
   let order: PendingOrder
+  /// Value to match when scanning: slot (e.g. A2) when isVerifyingBySlot, else style ID.
+  let requiredScanValue: String
+  /// True when we have an assigned slot (SKU); false when falling back to style code.
+  let isVerifyingBySlot: Bool
   let onClose: () -> Void
   @State private var showScanner = false
   @State private var verificationResult: String?
   @State private var torchOn = false
+
+  private var requiredLabel: String {
+    isVerifyingBySlot ? "Required (SKU):" : "Required (Style ID):"
+  }
+
+  private var expectedKindInMessage: String {
+    isVerifyingBySlot ? "SKU" : "Style ID"
+  }
 
   var body: some View {
     NavigationStack {
@@ -512,9 +527,14 @@ private struct VerifyOrderSheet: View {
               Text("Order \(order.orderNumber)")
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(NeonTheme.textPrimary)
-              Text("Required: \(order.sku)")
+              Text("\(requiredLabel) \(requiredScanValue)")
                 .font(.subheadline)
                 .foregroundStyle(NeonTheme.textSecondary)
+              if !isVerifyingBySlot {
+                Text("Assign a slot in Receiving to verify by SKU.")
+                  .font(.caption)
+                  .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+              }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
           }
@@ -523,7 +543,7 @@ private struct VerifyOrderSheet: View {
           if let result = verificationResult {
             Text(result)
               .font(.headline)
-              .foregroundStyle(result.hasPrefix("Correct") ? NeonTheme.accentEmerald : Color.orange)
+              .foregroundStyle(result.hasPrefix("Correct") ? NeonTheme.accentEmerald : Color.red)
               .padding(.horizontal)
           }
 
@@ -556,19 +576,19 @@ private struct VerifyOrderSheet: View {
       }
       .fullScreenCover(isPresented: $showScanner) {
         VerifyScannerOverlay(
-          requiredSku: order.sku,
+          requiredSku: requiredScanValue,
           torchOn: $torchOn,
           onPayload: { scanned in
             let scanNorm = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
-            let skuNorm = order.sku.trimmingCharacters(in: .whitespacesAndNewlines)
+            let requiredNorm = requiredScanValue.trimmingCharacters(in: .whitespacesAndNewlines)
             Task { @MainActor in
               showScanner = false
               if scanNorm.isEmpty {
                 verificationResult = "No barcode value."
-              } else if scanNorm == skuNorm {
+              } else if scanNorm == requiredNorm {
                 verificationResult = "Correct item."
               } else {
-                verificationResult = "Wrong item – expected SKU \(skuNorm)."
+                verificationResult = "Wrong item – expected \(expectedKindInMessage) \(requiredNorm)."
               }
             }
           },

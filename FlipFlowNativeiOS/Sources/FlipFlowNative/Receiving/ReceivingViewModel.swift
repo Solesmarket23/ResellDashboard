@@ -47,6 +47,10 @@ final class ReceivingViewModel: ObservableObject {
   @Published var matches: [PurchaseMatch] = []
   @Published var selected: PurchaseMatch?
 
+  /// After "Assign to next slot" succeeds, we store the location here so Print SKU label can use it
+  /// immediately (before refresh returns). Prefers selected.pickLocation when present.
+  @Published var pendingPickLocationByPurchaseId: [String: String] = [:]
+
   @Published var receivedNotes: String = ""
   @Published var alsoMarkDelivered: Bool = true
   @Published private(set) var trackingEntryMethod: String = "manual" // "manual" | "scan"
@@ -65,12 +69,29 @@ final class ReceivingViewModel: ObservableObject {
   @Published var banner: String?
   @Published var authBrowserUrl: URL?
 
+  /// When set, this tracking was already processed (local log) or already received (server). User can continue or cancel.
+  @Published var duplicateTrackingWarning: DuplicateTrackingWarning?
+
   enum LookupState: Equatable {
     case idle
     case loading
     case found
     case notFound
     case error
+  }
+
+  enum DuplicateTrackingWarning: Equatable {
+    case alreadyProcessedLocally(when: String)
+    case alreadyReceivedOnServer
+
+    var message: String {
+      switch self {
+      case .alreadyProcessedLocally(let when):
+        return "This tracking was already processed on this device on \(when). Continue anyway?"
+      case .alreadyReceivedOnServer:
+        return "This item was already marked received. Continue anyway?"
+      }
+    }
   }
 
   private let repo: PurchaseRepositoryProtocol
@@ -105,6 +126,7 @@ final class ReceivingViewModel: ObservableObject {
 
     lookupState = .loading
     lookupError = ""
+    duplicateTrackingWarning = nil
     matches = []
     selected = nil
 
@@ -120,10 +142,38 @@ final class ReceivingViewModel: ObservableObject {
       lookupState = .found
       // Auto-advance the flow once an item is found.
       flowStep = .stockx
+
+      // Duplicate check: already in processed log (this device) or already received (server).
+      if let existing = processedLog.first(where: { normalizeTracking($0.trackingNumber ?? "") == tracking }) {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        let when = formatter.string(from: existing.processedAt)
+        duplicateTrackingWarning = .alreadyProcessedLocally(when: when)
+        return
+      }
+      if selected?.received == true {
+        duplicateTrackingWarning = .alreadyReceivedOnServer
+      }
     } catch {
       lookupState = .error
       lookupError = (error as NSError).localizedDescription
     }
+  }
+
+  func dismissDuplicateTrackingWarning() {
+    duplicateTrackingWarning = nil
+  }
+
+  /// Clear current selection and tracking so user can scan again (used when they choose Cancel on duplicate warning).
+  func clearSelectionAndTrackingAfterDuplicateCancel() {
+    duplicateTrackingWarning = nil
+    trackingInput = ""
+    lookupState = .idle
+    lookupError = ""
+    matches = []
+    selected = nil
+    flowStep = .tracking
   }
 
   /// Re-fetch matches by current tracking and restore selection (e.g. after assigning pick location so UI shows updated pickLocation).
@@ -136,12 +186,33 @@ final class ReceivingViewModel: ObservableObject {
       matches = found
       if let id = currentId, let match = found.first(where: { $0.id == id }) {
         selected = match
+        // Clear pending now that we have server state (so we don't show stale pending)
+        if match.pickLocation != nil, !(match.pickLocation?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+          pendingPickLocationByPurchaseId.removeValue(forKey: id)
+        }
       } else {
         selected = found.first
       }
     } catch {
       // Keep current state on refresh failure
     }
+  }
+
+  /// Call after "Assign to next slot" succeeds so Print SKU label uses the new slot even before refresh.
+  func setPendingPickLocation(purchaseId: String, location: String) {
+    let loc = location.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !loc.isEmpty else { return }
+    pendingPickLocationByPurchaseId[purchaseId] = loc
+  }
+
+  /// Prefer selected.pickLocation; if nil, use pending from last assign (fixes timing so Print uses new slot).
+  func effectivePickLocationForSelected() -> String? {
+    guard let sel = selected else { return nil }
+    if let loc = sel.pickLocation, !loc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return loc.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    let pending = pendingPickLocationByPurchaseId[sel.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return (pending?.isEmpty == false) ? pending : nil
   }
 
   func applyScanPayload(_ raw: String) {
@@ -203,12 +274,22 @@ final class ReceivingViewModel: ObservableObject {
     flowStep = .result
   }
 
+  /// For testing: mark step 2 and 3 complete and go to Result so you can use Assign to next slot etc. without scanning StockX or Verify QR.
+  func skipSteps2And3ForTesting() {
+    stockxUnitQrRaw = "(testing)"
+    externalUrl = "https://testing"
+    externalStatus = .pass
+    flowStep = .result
+  }
+
   func resetFlowForNextItem() {
     trackingInput = ""
     lookupState = .idle
     lookupError = ""
+    duplicateTrackingWarning = nil
     matches = []
     selected = nil
+    pendingPickLocationByPurchaseId = [:]
     trackingEntryMethod = "manual"
 
     authSelfStatus = .unknown

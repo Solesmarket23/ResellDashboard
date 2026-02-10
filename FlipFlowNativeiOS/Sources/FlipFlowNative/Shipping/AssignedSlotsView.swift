@@ -25,49 +25,17 @@ struct AssignedSlotsView: View {
       NeonTheme.backgroundGradient
         .ignoresSafeArea()
       VStack(spacing: 16) {
-        if let msg = bannerMessage {
-          Text(msg)
-            .font(.subheadline)
-            .foregroundStyle(NeonTheme.accentCyan)
-            .padding(.horizontal)
-        }
+        bannerSection
         if isLoading && items.isEmpty {
           ProgressView()
             .tint(.white)
           Spacer()
+        } else if items.isEmpty {
+          Spacer()
+          emptyStateCard
+          Spacer()
         } else {
-          List {
-            ForEach(items) { item in
-              AssignedSlotRow(item: item, isDeleting: deletingId == item.id)
-                .listRowBackground(NeonCard())
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowSeparator(.hidden)
-            }
-            .onDelete(perform: deleteItems)
-          }
-          .listStyle(.plain)
-          .scrollContentBackground(.hidden)
-          .background(Color.clear)
-
-          if items.isEmpty {
-            NeonCard {
-              VStack(spacing: 10) {
-                Image(systemName: "tray")
-                  .font(.system(size: 28))
-                  .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
-                Text("No assigned slots")
-                  .font(.headline.weight(.semibold))
-                  .foregroundStyle(NeonTheme.textPrimary)
-                Text("Slots you assign in Receiving (Assign to next slot) will appear here. Swipe left to remove and reset.")
-                  .font(.caption)
-                  .foregroundStyle(NeonTheme.textSecondary)
-                  .multilineTextAlignment(.center)
-              }
-              .frame(maxWidth: .infinity)
-              .padding(.vertical, 20)
-            }
-            .padding(.horizontal, 16)
-          }
+          listSection
         }
       }
       .padding(.top, 8)
@@ -81,6 +49,50 @@ struct AssignedSlotsView: View {
     .refreshable {
       await load()
     }
+  }
+
+  @ViewBuilder private var bannerSection: some View {
+    if let msg = bannerMessage {
+      Text(msg)
+        .font(.subheadline)
+        .foregroundStyle(NeonTheme.accentCyan)
+        .padding(.horizontal)
+    }
+  }
+
+  private var listSection: some View {
+    List {
+      ForEach(items) { item in
+        AssignedSlotRow(item: item, isDeleting: deletingId == item.id)
+          .listRowBackground(NeonCard { EmptyView() })
+          .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+          .listRowSeparator(.hidden)
+      }
+      .onDelete(perform: deleteItems)
+    }
+    .listStyle(.plain)
+    .scrollContentBackground(.hidden)
+    .background(Color.clear)
+  }
+
+  private var emptyStateCard: some View {
+    NeonCard {
+      VStack(spacing: 10) {
+        Image(systemName: "tray")
+          .font(.system(size: 28))
+          .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+        Text("No assigned slots")
+          .font(.headline.weight(.semibold))
+          .foregroundStyle(NeonTheme.textPrimary)
+        Text("Slots you assign in Receiving (Assign to next slot) will appear here. Swipe left to remove and reset.")
+          .font(.caption)
+          .foregroundStyle(NeonTheme.textSecondary)
+          .multilineTextAlignment(.center)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 20)
+    }
+    .padding(.horizontal, 16)
   }
 
   private func load() async {
@@ -133,7 +145,8 @@ struct AssignedSlotsView: View {
     req.httpMethod = "POST"
     req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = try? JSONEncoder().encode(["purchaseId": purchaseId, "clear": true])
+    let body = ClearSlotRequest(purchaseId: purchaseId, clear: true)
+    req.httpBody = try? JSONEncoder().encode(body)
     do {
       let (_, res) = try await URLSession.shared.data(for: req)
       guard let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
@@ -179,6 +192,11 @@ private struct AssignedSlotRow: View {
     }
     .padding(.vertical, 4)
   }
+}
+
+private struct ClearSlotRequest: Encodable {
+  let purchaseId: String
+  let clear: Bool
 }
 
 private struct AssignedSlotsResponse: Decodable {

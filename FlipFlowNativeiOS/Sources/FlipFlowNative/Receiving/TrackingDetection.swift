@@ -30,62 +30,73 @@ enum TrackingDetection {
     return nil
   }
 
-  /// Extract a supported tracking number from a scan payload (barcode text, clipboard paste, etc).
-  /// Accepts:
-  /// - Raw tracking numbers
-  /// - Tracking URLs (we search query + whole string)
-  static func extractSupported(from raw: String) -> (tracking: String, carrier: CarrierHint)? {
+  /// Collect all UPS/FedEx tracking numbers found in a scan; USPS-like numbers are excluded.
+  /// Use this when the payload may contain multiple numbers (e.g. USPS + FedEx) so we can
+  /// prefer UPS/FedEx and disregard USPS.
+  static func extractAllSupported(from raw: String) -> [(tracking: String, carrier: CarrierHint)] {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.isEmpty { return nil }
+    if trimmed.isEmpty { return [] }
 
-    // 1) Try normalized whole string first (fast path).
+    var seen = Set<String>()
+    var results: [(tracking: String, carrier: CarrierHint)] = []
+
+    func add(_ tracking: String, allowSuspectFedex12: Bool = false) {
+      let n = normalize(tracking)
+      guard seen.insert(n).inserted else { return }
+      if let c = validateSupported(n, allowSuspectFedex12: allowSuspectFedex12) {
+        results.append((n, c))
+      }
+    }
+
     let normalized = normalize(trimmed)
-    if let carrier = validateSupported(normalized) { return (normalized, carrier) }
-
-    // Special case: some FedEx barcodes encode a long numeric string where the
-    // tracking number is the LAST 12 digits (sometimes last 15).
-    if normalized.range(of: #"^[0-9]{16,}$"#, options: .regularExpression) != nil {
-      let suffixes: [Int] = [12, 15, 14, 13] // prefer 12 for FedEx
-      for len in suffixes where normalized.count >= len {
-        let start = normalized.index(normalized.endIndex, offsetBy: -len)
-        let suffix = String(normalized[start...])
-        if let carrier = validateSupported(suffix, allowSuspectFedex12: true) {
-          return (suffix, carrier)
-        }
-      }
-    }
-
-    // 2) If it looks like a URL, inspect query items.
-    if let url = URL(string: trimmed), let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-      let queryValues = (comps.queryItems ?? [])
-        .compactMap { $0.value }
-        .flatMap { [$0, normalize($0)] }
-
-      for v in queryValues {
-        if let carrier = validateSupported(v) { return (v, carrier) }
-      }
-    }
-
-    // 3) Search the raw string for embedded candidates.
-    // UPS candidates
-    if let ups = firstRegexMatch(in: trimmed.uppercased(), pattern: #"1Z[0-9A-Z]{16}"#) {
-      if let carrier = validateSupported(ups) { return (ups, carrier) }
-    }
-
-    // FedEx candidates: prefer 12-digit, then 13–15
     let upper = trimmed.uppercased()
-    // Avoid \b word-boundary issues when digits are adjacent to letters.
-    // We only require "not preceded/followed by another digit".
+
+    // 1) Whole string
+    if let carrier = validateSupported(normalized) {
+      if seen.insert(normalized).inserted { results.append((normalized, carrier)) }
+    }
+
+    // 2) Long all-digit string: last 12/15/14/13 digits (FedEx often at end)
+    if normalized.range(of: #"^[0-9]{16,}$"#, options: .regularExpression) != nil {
+      for len in [12, 15, 14, 13] where normalized.count >= len {
+        let start = normalized.index(normalized.endIndex, offsetBy: -len)
+        add(String(normalized[start...]), allowSuspectFedex12: true)
+      }
+    }
+
+    // 3) URL query params
+    if let url = URL(string: trimmed), let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+      for item in comps.queryItems ?? [] {
+        guard let v = item.value else { continue }
+        add(v)
+      }
+    }
+
+    // 4) All UPS candidates (1Z + 16 alphanumeric)
+    for ups in regexMatches(in: upper, pattern: #"1Z[0-9A-Z]{16}"#) {
+      add(ups)
+    }
+
+    // 5) All FedEx candidates (12–15 digits); 12-digit starting with 9 is excluded as USPS in validateSupported
     let fedexCandidates =
       regexMatches(in: upper, pattern: #"(?<!\d)[0-9]{12}(?!\d)"#) +
       regexMatches(in: upper, pattern: #"(?<!\d)[0-9]{13,15}(?!\d)"#)
-
     for c in fedexCandidates {
-      let n = normalize(c)
-      if let carrier = validateSupported(n) { return (n, carrier) }
+      add(c)
     }
 
-    return nil
+    // Prefer UPS then FedEx so we consistently pick the same type when both exist
+    return results.sorted { a, b in
+      if a.carrier != b.carrier { return a.carrier == .ups }
+      return false
+    }
+  }
+
+  /// Extract a supported tracking number from a scan payload (barcode text, clipboard paste, etc).
+  /// When multiple numbers are present (e.g. USPS + FedEx), uses only UPS or FedEx and ignores USPS.
+  static func extractSupported(from raw: String) -> (tracking: String, carrier: CarrierHint)? {
+    let all = extractAllSupported(from: raw)
+    return all.first
   }
 
   /// Best-effort: extract a tracking-like candidate even if it's not supported.

@@ -190,7 +190,9 @@ private struct ReceivingScreen: View {
         return
       }
       if (200 ..< 300).contains(http.statusCode) {
-        vm.banner = "Assigned to \(assignBinLocation). Ready to Ship will use this for matching sales."
+        let loc = assignBinLocation.trimmingCharacters(in: .whitespaces)
+        vm.banner = "Assigned to \(loc). Ready to Ship will use this for matching sales."
+        vm.setPendingPickLocation(purchaseId: purchaseId, location: loc)
         showAssignBinSheet = false
         await vm.refreshCurrentSelection()
         return
@@ -248,6 +250,7 @@ private struct ReceivingScreen: View {
       if (200 ..< 300).contains(setHttp.statusCode) {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         vm.banner = "Assigned to \(location). Ready to Ship will use this for matching."
+        vm.setPendingPickLocation(purchaseId: purchaseId, location: location)
         await vm.refreshCurrentSelection()
         return
       }
@@ -268,6 +271,39 @@ private struct ReceivingScreen: View {
     if m.hasPrefix("Print failed") || m.hasPrefix("Failed") || m.hasPrefix("Sync failed") { return .error }
     if m.hasPrefix("Preparing label") || m.hasPrefix("Opening print") || m.hasPrefix("Printing") { return .progress }
     return .info
+  }
+
+  @ViewBuilder
+  private func duplicateTrackingWarningCard(_ warning: ReceivingViewModel.DuplicateTrackingWarning) -> some View {
+    ZStack {
+      Color.black.opacity(0.5)
+        .ignoresSafeArea()
+        .onTapGesture { }
+      NeonCard {
+        VStack(alignment: .leading, spacing: 14) {
+          Text("Already processed")
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(NeonTheme.textPrimary)
+          Text(warning.message)
+            .font(.subheadline)
+            .foregroundStyle(NeonTheme.textSecondary)
+          HStack(spacing: 12) {
+            Button("Cancel") {
+              vm.clearSelectionAndTrackingAfterDuplicateCancel()
+            }
+            .foregroundStyle(NeonTheme.textSecondary)
+            Button("Continue anyway") {
+              vm.dismissDuplicateTrackingWarning()
+            }
+            .fontWeight(.semibold)
+            .foregroundStyle(NeonTheme.accentCyan)
+          }
+          .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .padding(.horizontal, 24)
+    }
   }
 
   private var screenContent: some View {
@@ -319,6 +355,12 @@ private struct ReceivingScreen: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
             .padding(.bottom, 8)
+          }
+        }
+
+        .overlay {
+          if let warning = vm.duplicateTrackingWarning {
+            duplicateTrackingWarningCard(warning)
           }
         }
 
@@ -558,6 +600,17 @@ private struct ReceivingScreen: View {
           }
           .buttonStyle(NeonPrimaryButtonStyle())
 
+          Button {
+            vm.skipSteps2And3ForTesting()
+            expanded.insert(.result)
+          } label: {
+            Text("Skip to result (testing)")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
+          }
+          .buttonStyle(.plain)
+          .padding(.top, 2)
+
           if !vm.stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             HStack(alignment: .top, spacing: 8) {
               Text("Captured: \(vm.stockxUnitQrRaw)")
@@ -621,6 +674,17 @@ private struct ReceivingScreen: View {
         .onTapGesture { vm.flowStep = .auth; expanded.insert(.auth) }
 
         if isExpanded {
+          Button {
+            vm.skipSteps2And3ForTesting()
+            expanded.insert(.result)
+          } label: {
+            Text("Skip to result (testing)")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
+          }
+          .buttonStyle(.plain)
+          .padding(.bottom, 4)
+
           if !vm.isStep1Complete {
             StepHint(text: "You can scan now, but it’s best to identify the item first (Step 1).")
           }
@@ -750,9 +814,10 @@ private struct ReceivingScreen: View {
               }
               do {
                 // Use pick location (e.g. A43) as the SKU on the label when set; otherwise assign/get legacy SKU.
+                // Prefer effectivePickLocationForSelected() so we use the just-assigned slot immediately (no timing gap).
                 let skuForLabel: String
-                if let loc = selected.pickLocation, !loc.trimmingCharacters(in: .whitespaces).isEmpty {
-                  skuForLabel = loc.trimmingCharacters(in: .whitespaces)
+                if let loc = vm.effectivePickLocationForSelected(), !loc.isEmpty {
+                  skuForLabel = loc
                 } else {
                   skuForLabel = try await vm.assignSku()
                 }
@@ -809,7 +874,7 @@ private struct ReceivingScreen: View {
           .padding(.top, 2)
         }
 
-          if let loc = vm.selected?.pickLocation, !loc.trimmingCharacters(in: .whitespaces).isEmpty {
+          if let loc = vm.effectivePickLocationForSelected(), !loc.isEmpty {
             Text("Location: \(loc)")
               .font(.subheadline.weight(.semibold))
               .foregroundStyle(NeonTheme.accentEmerald)
