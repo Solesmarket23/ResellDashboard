@@ -78,7 +78,7 @@ private struct ShippingHostView: View {
           route: .toShip,
           icon: "shippingbox.fill",
           title: "To Ship",
-          subtitle: "View and undo marked orders"
+          subtitle: "Pending orders (SKU/size), print labels, marked shipped"
         )
         ShippingOptionCard(
           route: .printLabel,

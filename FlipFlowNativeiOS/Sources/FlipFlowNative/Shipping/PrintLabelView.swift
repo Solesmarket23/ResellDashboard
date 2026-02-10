@@ -6,6 +6,8 @@ import SwiftUI
 struct PrintLabelView: View {
   @EnvironmentObject private var auth: AuthViewModel
   let userId: String
+  /// When opening from To Ship, prefill this order number.
+  var initialOrderNumber: String? = nil
   @State private var orderNumber = ""
   @State private var isPrinting = false
   @State private var useThermalLabel = false
@@ -106,6 +108,11 @@ struct PrintLabelView: View {
     } message: {
       if let msg = alertMessage {
         Text(msg)
+      }
+    }
+    .onAppear {
+      if let o = initialOrderNumber, !o.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        orderNumber = o.trimmingCharacters(in: .whitespacesAndNewlines)
       }
     }
   }

@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
+import { getAdminDb } from '@/lib/firebase/admin';
+import { resolveNativeAuthUserId } from '@/lib/nativeAuthResolver';
+
+function getBearerToken(request: NextRequest): string | null {
+  const raw = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+  const m = raw.match(/^Bearer\s+(.+)$/i);
+  const t = (m?.[1] || '').trim();
+  return t ? t : null;
+}
 
 // Module-level cache to reduce repeated upstream calls across requests (best-effort in serverless).
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000; // 24h
@@ -71,11 +80,41 @@ export async function GET(request: NextRequest) {
     const includeCatalog = searchParams.get('includeCatalog') === '1';
     const includeDetails = searchParams.get('includeDetails') === '1';
 
-    const cookieStore = cookies();
-    let accessToken = cookieStore.get('stockx_access_token')?.value;
-    const refreshToken = cookieStore.get('stockx_refresh_token')?.value;
+    const cookieStore = await cookies();
+    let accessToken: string | null = null;
+    let refreshToken: string | null = null;
+
+    const bearer = getBearerToken(request);
+    if (bearer) {
+      const uid = await resolveNativeAuthUserId(request);
+      if (!uid) {
+        return NextResponse.json({ error: 'Invalid or missing Bearer token' }, { status: 401 });
+      }
+      const adminDb = getAdminDb();
+      if (!adminDb) {
+        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+      }
+      const userSnap = await adminDb.collection('users').doc(uid).get();
+      const userData = (userSnap.data() || {}) as Record<string, unknown>;
+      const stockxTokens = (userData?.stockxTokens || {}) as Record<string, unknown>;
+      accessToken = String(stockxTokens?.access_token ?? '').trim();
+      refreshToken = String(stockxTokens?.refresh_token ?? '').trim();
+      const expiresAt = Number(stockxTokens?.expires_at ?? 0);
+      if (expiresAt && Date.now() > expiresAt - 60_000 && refreshToken) {
+        const refreshed = await refreshStockXTokens(refreshToken);
+        if (refreshed.success && refreshed.accessToken) {
+          accessToken = refreshed.accessToken;
+          refreshToken = refreshed.refreshToken || refreshToken;
+        }
+      }
+    }
+
+    if (!accessToken) {
+      accessToken = cookieStore.get('stockx_access_token')?.value ?? null;
+      refreshToken = cookieStore.get('stockx_refresh_token')?.value ?? null;
+    }
+
     const apiKey = process.env.STOCKX_API_KEY;
-    
     if (!accessToken) {
       return NextResponse.json(
         { error: 'StockX not connected. Please authenticate first.' },
@@ -96,6 +135,9 @@ export async function GET(request: NextRequest) {
     qp.set('pageNumber', String(Math.max(1, pageNumber)));
     qp.set('pageSize', String(Math.max(1, pageSize)));
     if (orderStatus) qp.set('orderStatus', orderStatus);
+    // When fetching CREATED (to-ship) orders, sort by ship-by date so most urgent first
+    const sortOrder = searchParams.get('sortOrder') || (orderStatus === 'CREATED' ? 'SHIPBYDATE' : undefined);
+    if (sortOrder) qp.set('sortOrder', sortOrder);
 
     // Call StockX API for active orders
     const apiUrl = `https://api.stockx.com/v2/selling/orders/active?${qp.toString()}`;
@@ -388,9 +430,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // If we refreshed the token, set the new cookies
-    if (accessToken !== cookieStore.get('stockx_access_token')?.value) {
-      setStockXTokenCookies(successResponse, accessToken, refreshToken!);
+    if (!bearer && accessToken !== cookieStore.get('stockx_access_token')?.value) {
+      setStockXTokenCookies(successResponse, accessToken, refreshToken ?? '');
     }
 
     return successResponse;
