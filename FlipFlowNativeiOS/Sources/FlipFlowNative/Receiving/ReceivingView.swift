@@ -54,6 +54,7 @@ private struct ReceivingScreen: View {
   @State private var assignBinLocation: String = ""
   @State private var isSavingBin: Bool = false
   @State private var assignBinBanner: String?
+  @State private var isAssigningToNextSlot: Bool = false
 
   private func applyActiveStepHighlight<V: View>(_ view: V, isActive: Bool) -> some View {
     view
@@ -201,6 +202,61 @@ private struct ReceivingScreen: View {
       }
     } catch {
       assignBinBanner = "Failed to save."
+    }
+  }
+
+  /// One-tap auto-assign: fetch next available slot and set pick location without opening the sheet.
+  private func assignToNextAvailableSlot() async {
+    guard let purchaseId = vm.selected?.id, !purchaseId.isEmpty,
+          let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty
+    else {
+      vm.banner = "Select an item first and ensure you're signed in."
+      return
+    }
+    isAssigningToNextSlot = true
+    defer { Task { @MainActor in isAssigningToNextSlot = false } }
+    let baseURL = URL(string: "https://www.solesmarket.com")!
+    guard let nextURL = baseURL.appendingPathComponent("api/inventory/next-available-slot") as URL?,
+          let setURL = baseURL.appendingPathComponent("api/purchases/set-pick-location") as URL?
+    else {
+      vm.banner = "Configuration error."
+      return
+    }
+    var nextReq = URLRequest(url: nextURL)
+    nextReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    nextReq.setValue("application/json", forHTTPHeaderField: "Accept")
+    guard let (data, res) = try? await URLSession.shared.data(for: nextReq),
+          let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+          let decoded = try? JSONDecoder().decode(NextAvailableSlotResponse.self, from: data),
+          let location = decoded.location, !location.isEmpty
+    else {
+      vm.banner = "No slot available (bins may be full). Try \"Or choose a specific slot…\"."
+      return
+    }
+    var setReq = URLRequest(url: setURL)
+    setReq.httpMethod = "POST"
+    setReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    setReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    setReq.httpBody = try? JSONEncoder().encode(["purchaseId": purchaseId, "location": location])
+    do {
+      let (setData, setRes) = try await URLSession.shared.data(for: setReq)
+      guard let setHttp = setRes as? HTTPURLResponse else {
+        vm.banner = "Failed to assign location."
+        return
+      }
+      if (200 ..< 300).contains(setHttp.statusCode) {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        vm.banner = "Assigned to \(location). Ready to Ship will use this for matching."
+        return
+      }
+      if let json = try? JSONSerialization.jsonObject(with: setData) as? [String: Any],
+         let msg = json["error"] as? String, !msg.isEmpty {
+        vm.banner = msg
+      } else {
+        vm.banner = "That slot is already in use. Try \"Or choose a specific slot…\"."
+      }
+    } catch {
+      vm.banner = "Failed to save location."
     }
   }
 
@@ -746,21 +802,38 @@ private struct ReceivingScreen: View {
         }
 
           Button {
-            assignBinLocation = ""
-            assignBinBanner = nil
-            showAssignBinSheet = true
+            Task { await assignToNextAvailableSlot() }
           } label: {
             HStack {
               Image(systemName: "location.fill")
-              Text("Assign to bin")
-                .fontWeight(.semibold)
+              if isAssigningToNextSlot {
+                ProgressView()
+                  .tint(.white)
+                Text("Assigning…")
+                  .fontWeight(.semibold)
+              } else {
+                Text("Assign to next slot")
+                  .fontWeight(.semibold)
+              }
             }
             .foregroundStyle(.white)
           }
           .buttonStyle(NeonPrimaryButtonStyle())
-          .disabled(vm.selected == nil)
+          .disabled(vm.selected == nil || isAssigningToNextSlot)
           .opacity(vm.selected == nil ? 0.6 : 1)
           .padding(.top, 6)
+
+          Button {
+            assignBinLocation = ""
+            assignBinBanner = nil
+            showAssignBinSheet = true
+          } label: {
+            Text("Or choose a specific slot…")
+              .font(.subheadline.weight(.medium))
+              .foregroundStyle(NeonTheme.accentCyan)
+          }
+          .disabled(vm.selected == nil)
+          .padding(.top, 2)
 
           Button {
             Task {
