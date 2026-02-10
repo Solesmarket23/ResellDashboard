@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import UIKit
+import PDFKit
 
 enum LabelPrinting {
   // 1 inch = 72 points in PDF space.
@@ -158,18 +159,66 @@ enum LabelPrinting {
     return data
   }
 
+  /// Rotates each page of the PDF 90° and flips so text isn't mirrored. clockwise: true = CW, false = CCW.
+  static func rotatePDF90(_ data: Data, clockwise: Bool) -> Data? {
+    guard let doc = PDFDocument(data: data), doc.pageCount > 0 else { return nil }
+    var pages: [(CGRect, PDFPage)] = []
+    for i in 0 ..< doc.pageCount {
+      guard let page = doc.page(at: i) else { continue }
+      let bounds = page.bounds(for: .mediaBox)
+      let rotatedSize = CGSize(width: bounds.height, height: bounds.width)
+      pages.append((CGRect(origin: .zero, size: rotatedSize), page))
+    }
+    guard let first = pages.first else { return nil }
+    let angle: CGFloat = clockwise ? -.pi / 2 : .pi / 2
+    let renderer = UIGraphicsPDFRenderer(bounds: first.0)
+    let rotatedData = renderer.pdfData { ctx in
+      for (rect, page) in pages {
+        ctx.beginPage(withBounds: rect, pageInfo: [:])
+        let cg = ctx.cgContext
+        cg.saveGState()
+        if clockwise {
+          cg.translateBy(x: 0, y: rect.width - rect.height)
+          cg.translateBy(x: 0, y: rect.height)
+          cg.rotate(by: angle)
+          cg.translateBy(x: rect.width, y: 0)
+          cg.scaleBy(x: -1, y: 1)
+        } else {
+          cg.translateBy(x: 0, y: rect.width - rect.height)
+          cg.translateBy(x: rect.width, y: 0)
+          cg.rotate(by: angle)
+          cg.translateBy(x: 0, y: rect.height)
+          cg.scaleBy(x: 1, y: -1)
+        }
+        page.draw(with: .mediaBox, to: cg)
+        cg.restoreGState()
+      }
+    }
+    return rotatedData
+  }
+
+  /// rotate90Clockwise: nil = no rotation, true = 90° CW, false = 90° CCW
   @MainActor
   static func presentPrintSheet(
     pdfData: Data,
     jobName: String,
+    orientation: UIPrintInfo.Orientation = .portrait,
+    rotate90Clockwise: Bool? = nil,
     onComplete: ((Bool, Error?) -> Void)? = nil
   ) {
+    let dataToPrint: Data
+    if let cw = rotate90Clockwise, let rotated = rotatePDF90(pdfData, clockwise: cw) {
+      dataToPrint = rotated
+    } else {
+      dataToPrint = pdfData
+    }
     let controller = UIPrintInteractionController.shared
-    controller.printingItem = pdfData
+    controller.printingItem = dataToPrint
     controller.printInfo = {
       let info = UIPrintInfo(dictionary: nil)
       info.outputType = .general
       info.jobName = jobName
+      info.orientation = orientation
       return info
     }()
 

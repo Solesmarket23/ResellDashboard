@@ -9,6 +9,12 @@ struct PrintLabelView: View {
   @State private var orderNumber = ""
   @State private var isPrinting = false
   @State private var useThermalLabel = false
+  enum RotateOption: String, CaseIterable {
+    case none = "None"
+    case clockwise = "90° clockwise"
+    case counterClockwise = "90° counter-clockwise"
+  }
+  @State private var rotateOption: RotateOption = .clockwise
   @State private var bannerMessage: String?
   @State private var alertMessage: String?
   @State private var showAlert = false
@@ -46,6 +52,23 @@ struct PrintLabelView: View {
             .foregroundStyle(NeonTheme.textSecondary)
         }
         .tint(NeonTheme.accentCyan)
+        .padding(.horizontal, 16)
+
+        VStack(alignment: .leading, spacing: 6) {
+          Text("Rotate for 4×6 label")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(NeonTheme.textSecondary)
+          Text("If the label prints with 4\" on the 6\" side (and is cut off), use 90° clockwise.")
+            .font(.caption)
+            .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+          Picker("", selection: $rotateOption) {
+            ForEach(RotateOption.allCases, id: \.self) { opt in
+              Text(opt.rawValue).tag(opt)
+            }
+          }
+          .pickerStyle(.menu)
+          .tint(NeonTheme.accentCyan)
+        }
         .padding(.horizontal, 16)
 
         Button {
@@ -211,9 +234,16 @@ struct PrintLabelView: View {
       let isLast = index == documentIds.count - 1
       await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
         Task { @MainActor in
+          let rotate90Clockwise: Bool? = switch rotateOption {
+            case .none: nil
+            case .clockwise: true
+            case .counterClockwise: false
+          }
           LabelPrinting.presentPrintSheet(
             pdfData: pdfData,
-            jobName: jobName
+            jobName: jobName,
+            orientation: .portrait,
+            rotate90Clockwise: rotate90Clockwise
           ) { completed, error in
             Task { @MainActor in
               if let error {
