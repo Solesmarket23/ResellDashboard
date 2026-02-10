@@ -24,7 +24,10 @@ const extractIdFromUrl = (url: string) => {
   return m?.[1] ?? null;
 };
 const extractFromDocValue = (v: unknown): string | null => {
-  if (typeof v === 'string' && v.length > 0) return v;
+  if (typeof v === 'string' && v.length > 0) {
+    const idFromUrl = extractIdFromUrl(v);
+    return idFromUrl ?? v;
+  }
   if (v && typeof v === 'object' && (v as Record<string, unknown>)?.url)
     return extractIdFromUrl((v as Record<string, unknown>).url as string);
   return null;
@@ -233,7 +236,10 @@ export async function GET(request: NextRequest) {
         const orderData = (await orderRes.json()) as Record<string, unknown>;
         const fallbackId = getShippingIdFromOrderDetails(orderData);
         if (fallbackId) {
-          log('returning 200 from order-details fallback (list failed)', { shippingId: fallbackId });
+          log('returning 200 from order-details fallback (list failed)', {
+            shippingId: fallbackId,
+            note: 'Single doc from order details – same ID returned as both thermal and normal; type unknown.',
+          });
           const json = NextResponse.json({
             success: true,
             orderNumber,
@@ -318,7 +324,10 @@ export async function GET(request: NextRequest) {
         const orderData = (await orderRes.json()) as Record<string, unknown>;
         const fallbackId = getShippingIdFromOrderDetails(orderData);
         if (fallbackId) {
-          log('returning 200 from order-details fallback (list had no ID)', { shippingId: fallbackId });
+          log('returning 200 from order-details fallback (list had no ID)', {
+            shippingId: fallbackId,
+            note: 'Single doc from order details – same ID returned as both thermal and normal; type unknown.',
+          });
           const json = NextResponse.json({
             success: true,
             orderNumber,
@@ -339,6 +348,26 @@ export async function GET(request: NextRequest) {
     }
     const allIds = collectAllShippingIds(data);
     const { thermal: thermalIds, normal: normalIds } = collectThermalAndNormalIds(data);
+
+    const docs = (data?.shippingDocuments ?? data?.documents) as Record<string, unknown> | undefined;
+    const instructions = docs?.sellerShippingInstructions as Record<string, unknown> | undefined;
+    const thermalSample =
+      instructions?.thermalLabel && typeof instructions.thermalLabel === 'object'
+        ? JSON.stringify((instructions.thermalLabel as Record<string, unknown>)[Object.keys(instructions.thermalLabel as object)[0] ?? ''])
+        : null;
+    const normalSample =
+      instructions?.normalLabel && typeof instructions.normalLabel === 'object'
+        ? JSON.stringify((instructions.normalLabel as Record<string, unknown>)[Object.keys(instructions.normalLabel as object)[0] ?? ''])
+        : null;
+    log('list 200 response shape', {
+      hasShippingDocuments: !!data?.shippingDocuments,
+      hasDocuments: !!data?.documents,
+      docKeys: docs ? Object.keys(docs) : [],
+      hasSellerShippingInstructions: !!instructions,
+      instructionKeys: instructions ? Object.keys(instructions) : [],
+      thermalLabelSample: thermalSample,
+      normalLabelSample: normalSample,
+    });
     log('returning 200 from list response', { shippingDocumentIds: allIds, thermalDocumentIds: thermalIds, normalDocumentIds: normalIds });
     const json = NextResponse.json({
       success: true,
