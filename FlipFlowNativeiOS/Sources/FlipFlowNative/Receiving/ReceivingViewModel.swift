@@ -2,11 +2,10 @@ import Foundation
 
 @MainActor
 final class ReceivingViewModel: ObservableObject {
-  // For now, ALL purchase actions are trial-only (no writes).
-  private let trialModeEnabled: Bool = true
   private let processedLogKey = "flipflow_processed_log_v1"
   private let showItemBannerKey = "flipflow_show_item_banner_v1"
   private let syncEnabledKey = "flipflow_sync_enabled_v1"
+  private let trialModeEnabledKey = "flipflow_trial_mode_v1"
   private let localSkuMapKey = "flipflow_local_sku_map_v1"
   private let maxProcessedEntries = 200
 
@@ -38,6 +37,12 @@ final class ReceivingViewModel: ObservableObject {
   @Published var syncEnabled: Bool = false {
     didSet {
       UserDefaults.standard.set(syncEnabled, forKey: syncEnabledKey)
+    }
+  }
+  /// When true, receiving/verification writes are skipped (local log only). Toggle off to save to Firebase.
+  @Published var trialModeEnabled: Bool = true {
+    didSet {
+      UserDefaults.standard.set(trialModeEnabled, forKey: trialModeEnabledKey)
     }
   }
 
@@ -103,6 +108,7 @@ final class ReceivingViewModel: ObservableObject {
     self.processedLog = Self.loadProcessedLog(key: processedLogKey)
     self.showItemBanner = UserDefaults.standard.object(forKey: showItemBannerKey) as? Bool ?? true
     self.syncEnabled = UserDefaults.standard.object(forKey: syncEnabledKey) as? Bool ?? false
+    self.trialModeEnabled = UserDefaults.standard.object(forKey: trialModeEnabledKey) as? Bool ?? true
   }
 
   func normalizeTracking(_ raw: String) -> String {

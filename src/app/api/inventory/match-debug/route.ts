@@ -65,7 +65,6 @@ export async function GET(request: NextRequest) {
     const snap = await adminDb
       .collection(COLLECTIONS.PURCHASES)
       .where('userId', '==', userId)
-      .where('received', '==', true)
       .get();
 
     const purchases: Array<{
@@ -73,6 +72,7 @@ export async function GET(request: NextRequest) {
       productName: string;
       normalized: string;
       pickLocation: string;
+      received: boolean;
       allocatedToOrderNumber: string | null;
       receivedAt: string | null;
       matchType: 'exact' | 'containment' | 'none';
@@ -83,6 +83,7 @@ export async function GET(request: NextRequest) {
       const data = doc.data() as any;
       const pickLocation = (data?.pickLocation ?? data?.pick_location ?? '').toString().trim();
       if (!pickLocation) return;
+      const received = data?.received === true;
 
       const name =
         data?.productName ?? data?.product?.productName ?? data?.product?.name ?? data?.name ?? '';
@@ -116,6 +117,7 @@ export async function GET(request: NextRequest) {
         productName: name || '(empty)',
         normalized: normalized || '(empty)',
         pickLocation,
+        received,
         allocatedToOrderNumber: allocatedTo ?? null,
         receivedAt: receivedAt ?? null,
         matchType,
@@ -128,7 +130,7 @@ export async function GET(request: NextRequest) {
       requestedProductName: productNameRaw,
       normalizedRequested: wantedName,
       requestedLength: wantedLower.length,
-      note: 'Compare "normalizedRequested" with each purchase "normalized". For allocate-for-order we only use unallocated purchases; here we list all with pick location.',
+      note: 'allocate-for-order only uses items with received=true and a pick location. If you see a slot in "Assigned slots" but not here with received:true, mark that item as received in Receiving.',
       purchases,
     });
   } catch (e) {

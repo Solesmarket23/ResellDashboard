@@ -383,6 +383,14 @@ private struct ReceivingScreen: View {
                 systemImage: vm.syncEnabled ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath.circle"
               )
             }
+            Button {
+              vm.trialModeEnabled.toggle()
+            } label: {
+              Label(
+                vm.trialModeEnabled ? "Turn OFF trial mode (save to cloud)" : "Turn ON trial mode (no saves)",
+                systemImage: vm.trialModeEnabled ? "cloud.slash" : "cloud.fill"
+              )
+            }
           } label: {
             Image(systemName: "slider.horizontal.3")
               .font(.system(size: 16, weight: .semibold))
@@ -943,9 +951,11 @@ private struct ReceivingScreen: View {
           .buttonStyle(NeonPrimaryButtonStyle())
           .padding(.top, 6)
 
-          Text("Trial mode is ON: nothing is saved yet.")
-            .font(.caption2)
-            .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+          if vm.trialModeEnabled {
+            Text("Trial mode is ON: nothing is saved yet.")
+              .font(.caption2)
+              .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+          }
         } else {
           if vm.externalStatus == .pass {
             Text("Marked: Authentic")
@@ -960,9 +970,11 @@ private struct ReceivingScreen: View {
               .font(.caption)
               .foregroundStyle(NeonTheme.textSecondary)
           }
-          Text("Trial mode is ON.")
-            .font(.caption2)
-            .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
+          if vm.trialModeEnabled {
+            Text("Trial mode is ON.")
+              .font(.caption2)
+              .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
+          }
         }
       }
     }, isActive: isActive)
@@ -995,9 +1007,11 @@ private struct ReceivingScreen: View {
           }
         }
 
-        Text("Trial mode: stored on this device only.")
-          .font(.caption2)
-          .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+        if vm.trialModeEnabled {
+          Text("Trial mode: stored on this device only.")
+            .font(.caption2)
+            .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+        }
 
         if vm.processedLog.isEmpty {
           Text("No items processed yet.")

@@ -770,6 +770,7 @@ private struct VerifyOrderSheet: View {
         let name = p["productName"] as? String ?? "—"
         let norm = p["normalized"] as? String ?? "—"
         let loc = p["pickLocation"] as? String ?? "—"
+        let received = (p["received"] as? Bool) ?? false
         let match = p["matchType"] as? String ?? "—"
         let reason = p["reason"] as? String ?? ""
         let allocated = p["allocatedToOrderNumber"] as? String
@@ -778,11 +779,15 @@ private struct VerifyOrderSheet: View {
         lines.append("  productName: \(name)")
         lines.append("  normalized: \(norm)")
         lines.append("  pickLocation: \(loc)")
+        lines.append("  received: \(received ? "yes" : "NO – mark received in Receiving")")
         lines.append("  match: \(match) \(reason)")
         if let a = allocated, !a.isEmpty { lines.append("  (already allocated to \(a))") }
       }
       if purchases.isEmpty {
         lines.append("  (none – assign slots in Receiving first)")
+      } else {
+        lines.append("")
+        lines.append("Note: allocate-for-order only uses items with received=yes. If you see a slot in Assigned slots but received=NO above, complete Receiving and mark that item received.")
       }
       await MainActor.run {
         matchDebugText = lines.joined(separator: "\n")
