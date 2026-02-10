@@ -12,6 +12,7 @@ struct PendingOrder: Identifiable {
   let payout: Double?
   let orderDate: String?
   let shipByDate: String?
+  let imageUrl: String?
 }
 
 /// List of orders to ship: pending (CREATED) from StockX + marked-as-shipped from app.
@@ -36,7 +37,7 @@ struct ToShipView: View {
         .ignoresSafeArea()
       content
     }
-    .navigationTitle("To Ship")
+    .navigationTitle("Ready to Ship")
     .navigationBarTitleDisplayMode(.inline)
     .toolbarBackground(.hidden, for: .navigationBar)
     .task {
@@ -95,46 +96,14 @@ struct ToShipView: View {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 16) {
             if !pendingOrders.isEmpty {
-              sectionHeader("To ship", subtitle: "Pick by SKU/size, then print label")
+              sectionHeader("Ready to ship", subtitle: "Tap an order to print its label")
               ForEach(pendingOrders) { order in
-                NeonCard {
-                  VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                      Text(order.orderNumber)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(NeonTheme.textPrimary)
-                      Spacer()
-                      Button("Print label") {
-                        sheetOrderNumber = order.orderNumber
-                      }
-                      .font(.subheadline.weight(.medium))
-                      .foregroundStyle(NeonTheme.accentCyan)
-                    }
-                    Text(order.productName)
-                      .font(.subheadline)
-                      .foregroundStyle(NeonTheme.textSecondary)
-                    HStack(spacing: 12) {
-                      Label(order.sku, systemImage: "barcode")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(NeonTheme.accentCyan)
-                      Text("Size: \(order.size)")
-                        .font(.caption)
-                        .foregroundStyle(NeonTheme.textSecondary)
-                    }
-                    if let shipBy = order.shipByDate, !shipBy.isEmpty {
-                      Text("Ship by: \(shipBy)")
-                        .font(.caption2)
-                        .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
-                    }
-                  }
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 16)
+                pendingOrderRow(order)
               }
             }
 
             if !markedOrderNumbers.isEmpty {
-              sectionHeader("Marked as shipped", subtitle: "Undo to remove from list")
+              sectionHeader("Shipped", subtitle: "Marked as shipped — tap Undo to remove")
               ForEach(markedOrderNumbers, id: \.self) { orderNumber in
                 NeonCard {
                   HStack(alignment: .center, spacing: 12) {
@@ -163,19 +132,20 @@ struct ToShipView: View {
 
             if pendingOrders.isEmpty && markedOrderNumbers.isEmpty {
               NeonCard {
-                VStack(spacing: 10) {
-                  Image(systemName: "shippingbox")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
-                  Text("No orders to ship.")
-                    .font(.headline.weight(.semibold))
+                VStack(spacing: 14) {
+                  Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(NeonTheme.accentCyan.opacity(0.85))
+                  Text("All caught up")
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(NeonTheme.textPrimary)
-                  Text("Pending StockX orders appear here. Use Print shipping label to get labels.")
-                    .font(.caption)
+                  Text("When you have orders to ship, they’ll show up here. Tap one to print its label.")
+                    .font(.subheadline)
                     .foregroundStyle(NeonTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
               }
               .padding(.horizontal, 16)
             }
@@ -184,6 +154,10 @@ struct ToShipView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.clear)
+        .refreshable {
+          await loadPending()
+          await loadMarked()
+        }
       }
     }
     .padding(.top, 8)
@@ -199,6 +173,81 @@ struct ToShipView: View {
         .foregroundStyle(NeonTheme.textSecondary)
     }
     .padding(.horizontal, 20)
+  }
+
+  /// Apple-style row: product image left, order info right; full-row tap to print label.
+  private func pendingOrderRow(_ order: PendingOrder) -> some View {
+    let imageUrl = order.imageUrl.flatMap { URL(string: $0) }
+    return Button {
+      sheetOrderNumber = order.orderNumber
+    } label: {
+      NeonCard {
+        HStack(alignment: .center, spacing: 14) {
+          Group {
+            if let url = imageUrl {
+              AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                  image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                case .failure:
+                  Image(systemName: "photo")
+                    .font(.system(size: 22))
+                    .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+                case .empty:
+                  ProgressView()
+                    .tint(NeonTheme.accentCyan)
+                @unknown default:
+                  Image(systemName: "photo")
+                    .font(.system(size: 22))
+                    .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+                }
+              }
+            } else {
+              Image(systemName: "tshirt.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+            }
+          }
+          .frame(width: 56, height: 56)
+          .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+          VStack(alignment: .leading, spacing: 4) {
+            Text(order.orderNumber)
+              .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+              .foregroundStyle(NeonTheme.textPrimary)
+            Text(order.productName)
+              .font(.subheadline)
+              .foregroundStyle(NeonTheme.textSecondary)
+              .lineLimit(2)
+            HStack(spacing: 8) {
+              Text(order.sku)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(NeonTheme.accentCyan)
+              Text("•")
+                .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+              Text("Size \(order.size)")
+                .font(.caption)
+                .foregroundStyle(NeonTheme.textSecondary)
+            }
+            if let shipBy = order.shipByDate, !shipBy.isEmpty {
+              Text("Ship by \(shipBy)")
+                .font(.caption2)
+                .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+
+          Image(systemName: "chevron.right")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+    }
+    .padding(.horizontal, 16)
   }
 
   private func formatDate(_ ts: Double) -> String {
@@ -240,7 +289,8 @@ struct ToShipView: View {
             salePrice: o.salePrice,
             payout: o.payout,
             orderDate: o.orderDate,
-            shipByDate: shipBy
+            shipByDate: shipBy,
+            imageUrl: o.imageUrl
           )
         }
       }
@@ -275,8 +325,8 @@ struct ToShipView: View {
     var req = URLRequest(url: url)
     req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
     req.setValue("application/json", forHTTPHeaderField: "Accept")
-    isLoading = true
-    defer { Task { @MainActor in isLoading = false } }
+    await MainActor.run { isLoadingMarked = true }
+    defer { Task { @MainActor in isLoadingMarked = false } }
     do {
       let (data, _) = try await URLSession.shared.data(for: req)
       let decoded = try JSONDecoder().decode(MarkedResponse.self, from: data)
@@ -328,6 +378,7 @@ private struct ActiveOrderRow: Decodable {
   let payout: Double?
   let orderDate: String?
   let shipment: ShipmentInfo?
+  let imageUrl: String?
 }
 
 private struct ShipmentInfo: Decodable {
