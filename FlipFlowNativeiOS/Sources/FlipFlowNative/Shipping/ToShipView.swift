@@ -27,6 +27,8 @@ struct ToShipView: View {
   @State private var bannerMessage: String?
   @State private var orderNumberToUndo: String?
   @State private var sheetOrderNumber: String?
+  @State private var inventoryLocations: [String: String] = [:]
+  @State private var orderForVerify: PendingOrder?
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
   private var isLoading: Bool { isLoadingPending || isLoadingMarked }
@@ -41,8 +43,15 @@ struct ToShipView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbarBackground(.hidden, for: .navigationBar)
     .task {
+      await loadLocations()
       await loadPending()
       await loadMarked()
+    }
+    .fullScreenCover(item: $orderForVerify) { order in
+      VerifyOrderSheet(
+        order: order,
+        onClose: { orderForVerify = nil }
+      )
     }
     .sheet(isPresented: Binding(
       get: { sheetOrderNumber != nil },
@@ -155,6 +164,7 @@ struct ToShipView: View {
         .scrollContentBackground(.hidden)
         .background(Color.clear)
         .refreshable {
+          await loadLocations()
           await loadPending()
           await loadMarked()
         }
@@ -231,6 +241,11 @@ struct ToShipView: View {
                 .font(.caption)
                 .foregroundStyle(NeonTheme.textSecondary)
             }
+            if let loc = inventoryLocations[order.sku], !loc.isEmpty {
+              Label("Pick from \(loc)", systemImage: "location.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(NeonTheme.accentEmerald)
+            }
             if let shipBy = order.shipByDate, !shipBy.isEmpty {
               Text("Ship by \(shipBy)")
                 .font(.caption2)
@@ -239,15 +254,38 @@ struct ToShipView: View {
           }
           .frame(maxWidth: .infinity, alignment: .leading)
 
-          Image(systemName: "chevron.right")
+          VStack(spacing: 6) {
+            Button("Verify") {
+              orderForVerify = order
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(NeonTheme.accentCyan)
+            Image(systemName: "chevron.right")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+          }
         }
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
     }
     .padding(.horizontal, 16)
+  }
+
+  private func loadLocations() async {
+    guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
+    guard let url = baseURL.appendingPathComponent("api/inventory/locations") as URL? else { return }
+    var req = URLRequest(url: url)
+    req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Accept")
+    do {
+      let (data, res) = try await URLSession.shared.data(for: req)
+      guard let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else { return }
+      let decoded = try JSONDecoder().decode(InventoryLocationsResponse.self, from: data)
+      await MainActor.run {
+        inventoryLocations = decoded.locations ?? [:]
+      }
+    } catch { /* non-fatal */ }
   }
 
   private func formatDate(_ ts: Double) -> String {
@@ -383,4 +421,156 @@ private struct ActiveOrderRow: Decodable {
 
 private struct ShipmentInfo: Decodable {
   let shipByDate: String?
+}
+
+private struct InventoryLocationsResponse: Decodable {
+  let locations: [String: String]?
+}
+
+// MARK: - Verify order (scan to match SKU)
+
+private struct VerifyOrderSheet: View {
+  let order: PendingOrder
+  let onClose: () -> Void
+  @State private var showScanner = false
+  @State private var verificationResult: String?
+  @State private var torchOn = false
+
+  var body: some View {
+    NavigationStack {
+      ZStack {
+        NeonTheme.backgroundGradient
+          .ignoresSafeArea()
+        VStack(spacing: 20) {
+          NeonCard {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Order \(order.orderNumber)")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(NeonTheme.textPrimary)
+              Text("Required: \(order.sku)")
+                .font(.subheadline)
+                .foregroundStyle(NeonTheme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(.horizontal, 16)
+
+          if let result = verificationResult {
+            Text(result)
+              .font(.headline)
+              .foregroundStyle(result.hasPrefix("Correct") ? NeonTheme.accentEmerald : Color.orange)
+              .padding(.horizontal)
+          }
+
+          Button {
+            verificationResult = nil
+            showScanner = true
+          } label: {
+            HStack {
+              Image(systemName: "barcode.viewfinder")
+              Text("Scan to verify")
+            }
+            .fontWeight(.semibold)
+            .foregroundStyle(.white)
+          }
+          .buttonStyle(NeonPrimaryButtonStyle())
+          .padding(.horizontal, 16)
+
+          Spacer()
+        }
+        .padding(.top, 24)
+      }
+      .navigationTitle("Verify item")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbarBackground(.hidden, for: .navigationBar)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { onClose() }
+            .foregroundStyle(NeonTheme.accentCyan)
+        }
+      }
+      .fullScreenCover(isPresented: $showScanner) {
+        VerifyScannerOverlay(
+          requiredSku: order.sku,
+          torchOn: $torchOn,
+          onPayload: { scanned in
+            let scanNorm = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
+            let skuNorm = order.sku.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { @MainActor in
+              showScanner = false
+              if scanNorm.isEmpty {
+                verificationResult = "No barcode value."
+              } else if scanNorm == skuNorm {
+                verificationResult = "Correct item."
+              } else {
+                verificationResult = "Wrong item – expected SKU \(skuNorm)."
+              }
+            }
+          },
+          onClose: { Task { @MainActor in showScanner = false } }
+        )
+      }
+    }
+  }
+}
+
+private struct VerifyScannerOverlay: View {
+  let requiredSku: String
+  @Binding var torchOn: Bool
+  let onPayload: (String) -> Void
+  let onClose: () -> Void
+
+  var body: some View {
+    NavigationStack {
+      ZStack {
+        AVCaptureScannerView(
+          scanMode: .tracking,
+          onPayload: { onPayload($0) },
+          onClose: onClose,
+          torchOn: $torchOn,
+          onTorchStatus: { _ in }
+        )
+        .ignoresSafeArea()
+        VStack {
+          Spacer()
+          RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.85), lineWidth: 3)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.06)))
+            .frame(width: 280, height: 280)
+          Text("Scan product barcode to verify")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.top, 14)
+          Spacer()
+        }
+        .allowsHitTesting(false)
+        VStack {
+          HStack {
+            Spacer()
+            Button {
+              torchOn.toggle()
+            } label: {
+              Image(systemName: torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(.white)
+                .padding(12)
+                .background(Color.black.opacity(0.35), in: Circle())
+            }
+            .padding(.trailing, 16)
+            .padding(.top, 8)
+          }
+          Spacer()
+        }
+      }
+      .navigationTitle("Scan to verify")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { onClose() }
+            .foregroundStyle(.white)
+        }
+      }
+      .toolbarBackground(.hidden, for: .navigationBar)
+    }
+  }
 }

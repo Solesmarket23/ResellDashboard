@@ -102,6 +102,12 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
     }
     
+    // Pick locations: one doc per user (doc id = userId). SKU/styleId -> location for fulfillment.
+    match /inventoryLocations/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Allow any user to read/write their own data in user_sales collection
     match /user_sales/{sale} {
       // Allow Firebase authenticated users

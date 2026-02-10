@@ -18,4 +18,7 @@ export const COLLECTIONS = {
 
   // Shipping fulfillment: user's locally marked-as-shipped order numbers (not StockX state)
   MARKED_SHIPPED: 'markedShipped',
+
+  // Pick locations: SKU/styleId → location (bin/shelf) for fulfillment
+  INVENTORY_LOCATIONS: 'inventoryLocations',
 } as const;

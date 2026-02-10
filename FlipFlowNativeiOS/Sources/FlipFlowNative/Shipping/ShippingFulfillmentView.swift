@@ -59,6 +59,8 @@ private struct ShippingHostView: View {
             ReconciliationView(userId: userId)
           case .pickVerification:
             PickVerificationView(userId: userId)
+          case .inventory:
+            InventoryLocationsView(userId: userId)
           }
         }
       }
@@ -97,6 +99,12 @@ private struct ShippingHostView: View {
           icon: "barcode.viewfinder",
           title: "Pick verification",
           subtitle: "Scan to confirm SKU or style ID"
+        )
+        ShippingOptionCard(
+          route: .inventory,
+          icon: "location.fill",
+          title: "Pick locations",
+          subtitle: "SKU → bin/shelf so Ready to Ship shows where to pick"
         )
       }
       .padding(.horizontal, 16)
@@ -146,4 +154,5 @@ private enum ShippingRoute: Hashable {
   case printLabel
   case reconciliation
   case pickVerification
+  case inventory
 }
