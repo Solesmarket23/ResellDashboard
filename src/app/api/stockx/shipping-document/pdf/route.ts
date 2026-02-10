@@ -44,6 +44,42 @@ export async function GET(request: NextRequest) {
     };
     log('request', { orderNumber, shippingId });
 
+    const isDirectPdfUrl =
+      shippingId.startsWith('http://') || shippingId.startsWith('https://');
+    if (isDirectPdfUrl) {
+      log('fetching direct PDF URL (e.g. logistics-assets.stockx.com)');
+      const res = await fetch(shippingId, {
+        method: 'GET',
+        headers: { 'User-Agent': 'ResellDashboard/1.0' },
+      });
+      log('direct URL response', { status: res.status, contentType: res.headers.get('content-type') });
+      if (!res.ok) {
+        const text = await res.text();
+        log('direct PDF URL failed', { status: res.status, bodyPreview: text.slice(0, 150) });
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Could not load label PDF (${res.status}). Link may have expired.`,
+            orderNumber,
+            statusCode: res.status,
+          },
+          { status: res.status }
+        );
+      }
+      const blob = await res.blob();
+      const buffer = Buffer.from(await blob.arrayBuffer());
+      const contentType = res.headers.get('content-type') ?? 'application/pdf';
+      log('returning PDF from direct URL', { sizeBytes: buffer.length });
+      return new NextResponse(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': `attachment; filename="stockx-shipping-${orderNumber}.pdf"`,
+          'Cache-Control': 'private, no-cache',
+        },
+      });
+    }
+
     const cookieStore = await cookies();
     let accessToken: string | null = null;
     let refreshToken: string | null = null;
