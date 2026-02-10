@@ -150,9 +150,13 @@ struct InventoryLocationsView: View {
               Text("Location (bin / shelf)")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(NeonTheme.textSecondary)
-              TextField("e.g. A1 or Shelf 2", text: $newLocation)
+              TextField("e.g. C12 or type any", text: $newLocation)
                 .textFieldStyle(.plain)
                 .neonTextFieldStyle()
+              Text("Format A1–A999 per bin; max 5 items per bin. Each slot is unique (never reused).")
+                .font(.caption)
+                .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+              slotQuickSelect
             }
           }
           .padding(.horizontal, 16)
@@ -181,6 +185,38 @@ struct InventoryLocationsView: View {
       }
     }
     .environmentObject(auth)
+  }
+
+  /// Quick-select grid: 8 bins A–H × 5 slots (A1–A5 … H1–H5). Tap to set location.
+  private var slotQuickSelect: some View {
+    let bins = ["A", "B", "C", "D", "E", "F", "G", "H"]
+    let slotsPerBin = 5
+    return VStack(alignment: .leading, spacing: 8) {
+      Text("Quick select")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(NeonTheme.textSecondary)
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+        ForEach(bins, id: \.self) { bin in
+          ForEach(1 ... slotsPerBin, id: \.self) { num in
+            let slot = "\(bin)\(num)"
+            Button {
+              newLocation = slot
+            } label: {
+              Text(slot)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(newLocation == slot ? .black : NeonTheme.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                  newLocation == slot ? NeonTheme.accentCyan : Color.white.opacity(0.08),
+                  in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+            }
+            .buttonStyle(.plain)
+          }
+        }
+      }
+    }
   }
 
   private func loadLocations() async {

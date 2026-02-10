@@ -28,6 +28,8 @@ struct ToShipView: View {
   @State private var orderNumberToUndo: String?
   @State private var sheetOrderNumber: String?
   @State private var inventoryLocations: [String: String] = [:]
+  /// Allocated pick location by order number (from product-name match + FIFO). Falls back to inventoryLocations[sku].
+  @State private var allocatedLocationByOrderNumber: [String: String] = [:]
   @State private var orderForVerify: PendingOrder?
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
@@ -241,7 +243,7 @@ struct ToShipView: View {
                 .font(.caption)
                 .foregroundStyle(NeonTheme.textSecondary)
             }
-            if let loc = inventoryLocations[order.sku], !loc.isEmpty {
+            if let loc = pickLocation(for: order), !loc.isEmpty {
               Label("Pick from \(loc)", systemImage: "location.fill")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(NeonTheme.accentEmerald)
@@ -296,6 +298,12 @@ struct ToShipView: View {
     return f.string(from: d)
   }
 
+  /// Prefer allocated location (product-name match, FIFO), else styleId → location map.
+  private func pickLocation(for order: PendingOrder) -> String? {
+    if let loc = allocatedLocationByOrderNumber[order.orderNumber], !loc.isEmpty { return loc }
+    return inventoryLocations[order.sku]
+  }
+
   private func loadPending() async {
     guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
     var comps = URLComponents(url: baseURL.appendingPathComponent("api/stockx/orders/active"), resolvingAgainstBaseURL: false)!
@@ -314,29 +322,52 @@ struct ToShipView: View {
       }
       let decoded = try JSONDecoder().decode(ActiveOrdersResponse.self, from: data)
       let list = decoded.orders ?? []
-      await MainActor.run {
-        pendingOrders = list.map { o in
-          let shipBy = o.shipment?.shipByDate.flatMap { formatISODate($0) }
-          return PendingOrder(
-            id: o.orderNumber,
-            orderNumber: o.orderNumber,
-            productName: o.productName ?? "Unknown",
-            sku: o.sku ?? "—",
-            size: o.size ?? "—",
-            status: o.status ?? "CREATED",
-            salePrice: o.salePrice,
-            payout: o.payout,
-            orderDate: o.orderDate,
-            shipByDate: shipBy,
-            imageUrl: o.imageUrl
-          )
-        }
+      let orders = list.map { o in
+        let shipBy = o.shipment?.shipByDate.flatMap { formatISODate($0) }
+        return PendingOrder(
+          id: o.orderNumber,
+          orderNumber: o.orderNumber,
+          productName: o.productName ?? "Unknown",
+          sku: o.sku ?? "—",
+          size: o.size ?? "—",
+          status: o.status ?? "CREATED",
+          salePrice: o.salePrice,
+          payout: o.payout,
+          orderDate: o.orderDate,
+          shipByDate: shipBy,
+          imageUrl: o.imageUrl
+        )
       }
+      await MainActor.run { pendingOrders = orders }
+      await loadAllocations(for: orders, bearer: bearer)
     } catch {
       await MainActor.run {
         if bannerMessage == nil { bannerMessage = "Could not load pending orders." }
       }
     }
+  }
+
+  /// Call allocate-for-order for each pending order (product-name match, FIFO); updates allocatedLocationByOrderNumber.
+  private func loadAllocations(for orders: [PendingOrder], bearer: String) async {
+    var result: [String: String] = [:]
+    for order in orders {
+      var comps = URLComponents(url: baseURL.appendingPathComponent("api/inventory/allocate-for-order"), resolvingAgainstBaseURL: false)!
+      comps.queryItems = [
+        URLQueryItem(name: "orderNumber", value: order.orderNumber),
+        URLQueryItem(name: "productName", value: order.productName),
+      ]
+      guard let url = comps.url else { continue }
+      var req = URLRequest(url: url)
+      req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+      req.setValue("application/json", forHTTPHeaderField: "Accept")
+      guard let (data, res) = try? await URLSession.shared.data(for: req),
+            let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+            let decoded = try? JSONDecoder().decode(AllocateForOrderResponse.self, from: data),
+            let loc = decoded.location, !loc.isEmpty
+      else { continue }
+      result[order.orderNumber] = loc
+    }
+    await MainActor.run { allocatedLocationByOrderNumber = result }
   }
 
   private func formatISODate(_ iso: String) -> String? {
@@ -425,6 +456,10 @@ private struct ShipmentInfo: Decodable {
 
 private struct InventoryLocationsResponse: Decodable {
   let locations: [String: String]?
+}
+
+private struct AllocateForOrderResponse: Decodable {
+  let location: String?
 }
 
 // MARK: - Verify order (scan to match SKU)

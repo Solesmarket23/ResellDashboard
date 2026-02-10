@@ -50,6 +50,10 @@ private struct ReceivingScreen: View {
   @State private var bannerDismissWorkItem: DispatchWorkItem?
   @State private var isPrintingLabel: Bool = false
   @State private var showClearProcessedConfirm: Bool = false
+  @State private var showAssignBinSheet: Bool = false
+  @State private var assignBinLocation: String = ""
+  @State private var isSavingBin: Bool = false
+  @State private var assignBinBanner: String?
 
   private func applyActiveStepHighlight<V: View>(_ view: V, isActive: Bool) -> some View {
     view
@@ -144,6 +148,60 @@ private struct ReceivingScreen: View {
           authSheetItem = IdentifiableURL(url: url)
         }
       }
+      .sheet(isPresented: $showAssignBinSheet) {
+        AssignBinSheet(
+          location: $assignBinLocation,
+          banner: $assignBinBanner,
+          isSaving: $isSavingBin,
+          purchaseId: vm.selected?.id,
+          productName: vm.selected?.productName ?? "",
+          onSave: {
+            Task { await saveAssignBin() }
+          },
+          onDismiss: { showAssignBinSheet = false }
+        )
+        .environmentObject(auth)
+      }
+  }
+
+  private func saveAssignBin() async {
+    guard let purchaseId = vm.selected?.id, !purchaseId.isEmpty,
+          !assignBinLocation.trimmingCharacters(in: .whitespaces).isEmpty,
+          let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty
+    else {
+      assignBinBanner = "Select an item and enter a location."
+      return
+    }
+    let baseURL = URL(string: "https://www.solesmarket.com")!
+    guard let url = baseURL.appendingPathComponent("api/purchases/set-pick-location") as URL? else { return }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONEncoder().encode(["purchaseId": purchaseId, "location": assignBinLocation.trimmingCharacters(in: .whitespaces)])
+    isSavingBin = true
+    assignBinBanner = nil
+    defer { Task { @MainActor in isSavingBin = false } }
+    do {
+      let (data, res) = try await URLSession.shared.data(for: req)
+      guard let http = res as? HTTPURLResponse else {
+        assignBinBanner = "Failed to save location."
+        return
+      }
+      if (200 ..< 300).contains(http.statusCode) {
+        vm.banner = "Assigned to \(assignBinLocation). Ready to Ship will use this for matching sales."
+        showAssignBinSheet = false
+        return
+      }
+      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         let msg = json["error"] as? String, !msg.isEmpty {
+        assignBinBanner = msg
+      } else {
+        assignBinBanner = "That slot may already be in use. Each slot is unique."
+      }
+    } catch {
+      assignBinBanner = "Failed to save."
+    }
   }
 
   private func toastKind(for message: String) -> NeonToast.Kind {
@@ -686,6 +744,23 @@ private struct ReceivingScreen: View {
           .buttonStyle(NeonPrimaryButtonStyle())
           .padding(.top, 2)
         }
+
+          Button {
+            assignBinLocation = ""
+            assignBinBanner = nil
+            showAssignBinSheet = true
+          } label: {
+            HStack {
+              Image(systemName: "location.fill")
+              Text("Assign to bin")
+                .fontWeight(.semibold)
+            }
+            .foregroundStyle(.white)
+          }
+          .buttonStyle(NeonPrimaryButtonStyle())
+          .disabled(vm.selected == nil)
+          .opacity(vm.selected == nil ? 0.6 : 1)
+          .padding(.top, 6)
 
           Button {
             Task {
@@ -1389,5 +1464,115 @@ private struct ScannerSheet: View {
       torchOn = false
     }
   }
+}
+
+// MARK: - Assign to bin (pick location for fulfillment)
+
+private struct AssignBinSheet: View {
+  @Binding var location: String
+  @Binding var banner: String?
+  @Binding var isSaving: Bool
+  let purchaseId: String?
+  let productName: String
+  let onSave: () -> Void
+  let onDismiss: () -> Void
+  @EnvironmentObject private var auth: AuthViewModel
+
+  private let bins = ["A", "B", "C", "D", "E", "F", "G", "H"]
+  private let slotsPerBin = 5
+
+  var body: some View {
+    NavigationStack {
+      ZStack {
+        NeonTheme.backgroundGradient
+          .ignoresSafeArea()
+        VStack(alignment: .leading, spacing: 16) {
+          if !productName.isEmpty {
+            Text(productName)
+              .font(.subheadline)
+              .foregroundStyle(NeonTheme.textSecondary)
+              .lineLimit(2)
+              .padding(.horizontal)
+          }
+          Text("Slots are unique and never reused (e.g. A3 won’t be suggested again). Format A1–A999 per bin; max 5 items per bin. Suggested slot is next available.")
+            .font(.caption)
+            .foregroundStyle(NeonTheme.textSecondary)
+            .padding(.horizontal)
+          TextField("e.g. A1 or B28", text: $location)
+            .textFieldStyle(.plain)
+            .neonTextFieldStyle()
+            .padding(.horizontal, 16)
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+            ForEach(bins, id: \.self) { bin in
+              ForEach(1 ... slotsPerBin, id: \.self) { num in
+                let slot = "\(bin)\(num)"
+                Button {
+                  location = slot
+                } label: {
+                  Text(slot)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(location == slot ? .black : NeonTheme.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                      location == slot ? NeonTheme.accentCyan : Color.white.opacity(0.08),
+                      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+              }
+            }
+          }
+          .padding(.horizontal, 16)
+          if let msg = banner {
+            Text(msg)
+              .font(.caption)
+              .foregroundStyle(Color.orange)
+              .padding(.horizontal)
+          }
+          Spacer()
+        }
+        .padding(.top, 20)
+      }
+      .navigationTitle("Assign to bin")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbarBackground(.hidden, for: .navigationBar)
+      .onAppear {
+        Task { await suggestNextSlot() }
+      }
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { onDismiss() }
+            .foregroundStyle(NeonTheme.accentCyan)
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Save") {
+            onSave()
+          }
+          .foregroundStyle(NeonTheme.accentCyan)
+          .disabled(location.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+        }
+      }
+    }
+  }
+
+  private func suggestNextSlot() async {
+    guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
+    let baseURL = URL(string: "https://www.solesmarket.com")!
+    guard let url = baseURL.appendingPathComponent("api/inventory/next-available-slot") as URL? else { return }
+    var req = URLRequest(url: url)
+    req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Accept")
+    guard let (data, res) = try? await URLSession.shared.data(for: req),
+          let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+          let decoded = try? JSONDecoder().decode(NextAvailableSlotResponse.self, from: data),
+          let loc = decoded.location, !loc.isEmpty
+    else { return }
+    await MainActor.run { location = loc }
+  }
+}
+
+private struct NextAvailableSlotResponse: Decodable {
+  let location: String?
 }
 

@@ -14,8 +14,25 @@ function getBearerToken(request: NextRequest): string | null {
 // Module-level cache to reduce repeated upstream calls across requests (best-effort in serverless).
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const ORDER_DETAILS_TTL_MS = 10 * 60 * 1000; // 10m
-const catalogCache = new Map<string, { brand: string | null; productType: string | null; ts: number }>();
+const catalogCache = new Map<string, { brand: string | null; productType: string | null; imageUrl: string | null; ts: number }>();
 const orderDetailsCache = new Map<string, { data: any | null; ts: number }>();
+
+/** Extract imageUrl from StockX catalog product JSON (same logic as catalog/products and listings/native). */
+function imageUrlFromCatalogProduct(product: any): string | null {
+  if (!product || typeof product !== 'object') return null;
+  const url =
+    (Array.isArray(product.productImages) && product.productImages[0]) ||
+    (Array.isArray(product.product_images) && product.product_images[0]) ||
+    product.media?.imageUrl ||
+    product.media?.image_url ||
+    product.imageUrl ||
+    product.image_url ||
+    product.image ||
+    (Array.isArray(product.media) &&
+      (product.media.find((m: any) => m?.type === 'image' && m?.url)?.url ||
+        product.media.find((m: any) => typeof m?.url === 'string')?.url));
+  return typeof url === 'string' && url.trim() ? url.trim() : null;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -199,17 +216,16 @@ export async function GET(request: NextRequest) {
     console.log('✅ Active orders fetched successfully:', data);
 
     const enrichBrands = async (orders: any[], token: string) => {
-      if (!includeCatalog) return orders;
       if (!Array.isArray(orders) || orders.length === 0) return orders;
 
-      const cache = new Map<string, { brand: string | null; productType: string | null }>();
-      const fetchBrand = async (pid: string): Promise<string | null> => {
-        if (!pid) return null;
-        if (cache.has(pid)) return cache.get(pid)?.brand ?? null;
+      const cache = new Map<string, { brand: string | null; productType: string | null; imageUrl: string | null }>();
+      const fetchCatalog = async (pid: string) => {
+        if (!pid) return;
+        if (cache.has(pid)) return;
         const cachedGlobal = catalogCache.get(pid);
         if (cachedGlobal && Date.now() - cachedGlobal.ts < CATALOG_TTL_MS) {
-          cache.set(pid, { brand: cachedGlobal.brand, productType: cachedGlobal.productType });
-          return cachedGlobal.brand ?? null;
+          cache.set(pid, { brand: cachedGlobal.brand, productType: cachedGlobal.productType, imageUrl: cachedGlobal.imageUrl });
+          return;
         }
         try {
           const res = await fetchWithBackoff(`https://api.stockx.com/v2/catalog/products/${encodeURIComponent(pid)}`, {
@@ -223,20 +239,19 @@ export async function GET(request: NextRequest) {
             },
           }, 'catalog');
           if (!res.ok) {
-            cache.set(pid, { brand: null, productType: null });
-            catalogCache.set(pid, { brand: null, productType: null, ts: Date.now() });
-            return null;
+            cache.set(pid, { brand: null, productType: null, imageUrl: null });
+            catalogCache.set(pid, { brand: null, productType: null, imageUrl: null, ts: Date.now() });
+            return;
           }
           const json = await res.json().catch(() => ({}));
           const brand = typeof json?.brand === 'string' ? json.brand.trim() : null;
           const productType = typeof json?.productType === 'string' ? json.productType.trim() : null;
-          cache.set(pid, { brand: brand || null, productType: productType || null });
-          catalogCache.set(pid, { brand: brand || null, productType: productType || null, ts: Date.now() });
-          return brand || null;
+          const imageUrl = imageUrlFromCatalogProduct(json);
+          cache.set(pid, { brand: brand || null, productType: productType || null, imageUrl });
+          catalogCache.set(pid, { brand: brand || null, productType: productType || null, imageUrl, ts: Date.now() });
         } catch {
-          cache.set(pid, { brand: null, productType: null });
-          catalogCache.set(pid, { brand: null, productType: null, ts: Date.now() });
-          return null;
+          cache.set(pid, { brand: null, productType: null, imageUrl: null });
+          catalogCache.set(pid, { brand: null, productType: null, imageUrl: null, ts: Date.now() });
         }
       };
 
@@ -254,7 +269,7 @@ export async function GET(request: NextRequest) {
         while (idx < ids.length) {
           const current = ids[idx];
           idx += 1;
-          await fetchBrand(current);
+          await fetchCatalog(current);
         }
       });
       await Promise.all(workers);
@@ -263,11 +278,14 @@ export async function GET(request: NextRequest) {
         const pid = String(o?.product?.productId || o?.productId || o?.product?.id || '').trim();
         const existing = String(o?.product?.brand || o?.variant?.product?.brand || '').trim();
         const cached = pid ? cache.get(pid) : undefined;
-        const brand = existing || (cached?.brand || '');
+        const brand = includeCatalog ? (existing || (cached?.brand ?? '')) : existing;
         const existingCategory = String(o?.product?.category || o?.variant?.product?.category || '').trim();
-        const category = existingCategory || (cached?.productType || '');
+        const category = includeCatalog ? (existingCategory || (cached?.productType ?? '')) : existingCategory;
+        const imageUrl = cached?.imageUrl ?? o?.variant?.product?.media?.imageUrl ?? o?.product?.imageUrl ?? null;
 
-        if (!brand && !category) return o;
+        const hasBrandOrCategory = !!(brand || category);
+        const hasImageUrl = !!imageUrl;
+        if (!hasBrandOrCategory && !hasImageUrl) return o;
         return {
           ...o,
           product: {
@@ -275,6 +293,7 @@ export async function GET(request: NextRequest) {
             productId: o?.product?.productId || pid,
             ...(brand ? { brand } : {}),
             ...(category ? { category } : {}),
+            ...(imageUrl ? { imageUrl } : {}),
           },
         };
       });
@@ -407,7 +426,7 @@ export async function GET(request: NextRequest) {
           orderDate: order.createdAt,
           buyerLocation: order.shippingAddress?.city || 'Unknown',
           shippingMethod: order.shippingMethod || 'Standard',
-          imageUrl: order.variant?.product?.media?.imageUrl,
+          imageUrl: order.variant?.product?.media?.imageUrl || order.product?.imageUrl,
           shipment: order.shipment,
           authenticationDetails: order.authenticationDetails,
           inventoryType: order.inventoryType,
