@@ -5,6 +5,7 @@ struct AssignedSlotItem: Identifiable {
   let id: String
   let orderNumber: String?
   let productName: String?
+  let size: String?
   let pickLocation: String
   let updatedAt: String?
 }
@@ -117,7 +118,7 @@ struct AssignedSlotsView: View {
         return
       }
       let decoded = try JSONDecoder().decode(AssignedSlotsResponse.self, from: data)
-      items = decoded.items?.map { AssignedSlotItem(id: $0.id, orderNumber: $0.orderNumber, productName: $0.productName, pickLocation: $0.pickLocation, updatedAt: $0.updatedAt) } ?? []
+      items = decoded.items?.map { AssignedSlotItem(id: $0.id, orderNumber: $0.orderNumber, productName: $0.productName, size: $0.size, pickLocation: $0.pickLocation, updatedAt: $0.updatedAt) } ?? []
     } catch {
       bannerMessage = "Failed to load: \(error.localizedDescription)"
       items = []
@@ -178,10 +179,17 @@ private struct AssignedSlotRow: View {
           .font(.subheadline)
           .foregroundStyle(NeonTheme.textPrimary)
           .lineLimit(2)
-        if let order = item.orderNumber, !order.isEmpty {
-          Text("Order: \(order)")
-            .font(.caption2)
-            .foregroundStyle(NeonTheme.textSecondary)
+        HStack(spacing: 6) {
+          if let size = item.size, !size.isEmpty {
+            Text("Size \(size)")
+              .font(.caption)
+              .foregroundStyle(NeonTheme.textSecondary)
+          }
+          if let order = item.orderNumber, !order.isEmpty {
+            Text("Order: \(order)")
+              .font(.caption2)
+              .foregroundStyle(NeonTheme.textSecondary)
+          }
         }
       }
       Spacer(minLength: 8)
@@ -208,6 +216,7 @@ private struct AssignedSlotRowDTO: Decodable {
   let id: String
   let orderNumber: String?
   let productName: String?
+  let size: String?
   let pickLocation: String
   let updatedAt: String?
 }

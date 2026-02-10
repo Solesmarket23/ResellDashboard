@@ -331,8 +331,7 @@ final class ReceivingViewModel: ObservableObject {
       return false
     }
     if !isStep4Complete {
-      banner = "Action required: Choose Authentic / Not authentic (Step 4) before starting the next item."
-      return false
+      externalStatus = .pass
     }
 
     let entry = ProcessedLogEntry(

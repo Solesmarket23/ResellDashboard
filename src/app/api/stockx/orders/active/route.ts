@@ -43,6 +43,17 @@ function normalizeShipment(shipment: any): any {
   return { ...shipment, shipByDate: shipBy };
 }
 
+/** Build shipment object for response; fallback to order-level shipByDate/ship_by_date if shipment lacks it. */
+function shipmentForResponse(order: any): any {
+  const normalized = normalizeShipment(order?.shipment);
+  const fromShipment = normalized?.shipByDate ?? normalized?.ship_by_date;
+  if (fromShipment) return normalized ?? { shipByDate: fromShipment };
+  const fromOrder =
+    order?.shipByDate ?? order?.ship_by_date ?? (typeof (order as any)?.ShipByDate === 'string' ? (order as any).ShipByDate : null);
+  if (fromOrder) return { ...(normalized || {}), shipByDate: fromOrder };
+  return normalized || order?.shipment || null;
+}
+
 /** Extract image URL from an order (list or enriched) from all known StockX response shapes. */
 function imageUrlFromOrder(order: any): string | null {
   if (!order || typeof order !== 'object') return null;
@@ -454,7 +465,7 @@ export async function GET(request: NextRequest) {
           buyerLocation: order.shippingAddress?.city || 'Unknown',
           shippingMethod: order.shippingMethod || 'Standard',
           imageUrl: imageUrlFromOrder(order),
-          shipment: normalizeShipment(order.shipment),
+          shipment: shipmentForResponse(order),
           authenticationDetails: order.authenticationDetails,
           inventoryType: order.inventoryType,
         };

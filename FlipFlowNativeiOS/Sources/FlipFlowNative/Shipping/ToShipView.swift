@@ -1,4 +1,5 @@
 import SwiftUI
+import AudioToolbox
 
 /// Pending (CREATED) StockX order for picking/shipping.
 struct PendingOrder: Identifiable {
@@ -160,7 +161,11 @@ struct ToShipView: View {
         order: order,
         requiredScanValue: slot ?? order.sku,
         isVerifyingBySlot: slot != nil,
-        onClose: { orderForVerify = nil }
+        onClose: { orderForVerify = nil },
+        onPrintShippingLabel: {
+          sheetOrderNumber = order.orderNumber
+          orderForVerify = nil
+        }
       )
     }
     .sheet(isPresented: Binding(
@@ -290,13 +295,30 @@ struct ToShipView: View {
     .padding(.top, 8)
   }
 
+  private var totalExpectedPayout: Double {
+    pendingOrders.compactMap(\.payout).reduce(0, +)
+  }
+
   private var summaryCards: some View {
-    HStack(spacing: 12) {
-      summaryCard(title: "Total pending", value: "\(pendingOrders.count)", icon: "shippingbox")
-      summaryCard(title: "Ship today", value: "\(shipTodayCount())", icon: "calendar")
-      summaryCard(title: "Ship tomorrow", value: "\(shipTomorrowCount())", icon: "calendar.badge.clock")
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 12) {
+        summaryCard(title: "Total pending", value: "\(pendingOrders.count)", icon: "shippingbox")
+        summaryCard(title: "Ship today", value: "\(shipTodayCount())", icon: "calendar", subtitle: "EST")
+        summaryCard(title: "Ship tomorrow", value: "\(shipTomorrowCount())", icon: "calendar.badge.clock", subtitle: "EST")
+        summaryCard(title: "Expected payout", value: formatPayout(totalExpectedPayout), icon: "dollarsign.circle")
+      }
+      .padding(.horizontal, 16)
     }
-    .padding(.horizontal, 16)
+  }
+
+  private func formatPayout(_ amount: Double) -> String {
+    if amount <= 0 { return "—" }
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .currency
+    formatter.currencyCode = "USD"
+    formatter.maximumFractionDigits = 2
+    formatter.minimumFractionDigits = 2
+    return formatter.string(from: NSNumber(value: amount)) ?? String(format: "$%.2f", amount)
   }
 
   private var searchBar: some View {
@@ -378,7 +400,7 @@ struct ToShipView: View {
     .padding(.horizontal, 16)
   }
 
-  private func summaryCard(title: String, value: String, icon: String) -> some View {
+  private func summaryCard(title: String, value: String, icon: String, subtitle: String? = nil) -> some View {
     NeonCard {
       VStack(spacing: 6) {
         Image(systemName: icon)
@@ -391,6 +413,11 @@ struct ToShipView: View {
           .font(.caption)
           .foregroundStyle(NeonTheme.textSecondary)
           .multilineTextAlignment(.center)
+        if let sub = subtitle, !sub.isEmpty {
+          Text(sub)
+            .font(.caption2)
+            .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -480,6 +507,7 @@ struct ToShipView: View {
           VStack(spacing: 6) {
             Button("Verify") {
               orderForVerify = order
+              Task { await ensureAllocation(for: order) }
             }
             .font(.caption.weight(.medium))
             .foregroundStyle(NeonTheme.accentCyan)
@@ -593,6 +621,28 @@ struct ToShipView: View {
     await MainActor.run { allocatedLocationByOrderNumber = result }
   }
 
+  /// When you tap a sale (Verify), find the first available matching SKU for that order and show it. Idempotent.
+  private func ensureAllocation(for order: PendingOrder) async {
+    guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
+    var comps = URLComponents(url: baseURL.appendingPathComponent("api/inventory/allocate-for-order"), resolvingAgainstBaseURL: false)!
+    comps.queryItems = [
+      URLQueryItem(name: "orderNumber", value: order.orderNumber),
+      URLQueryItem(name: "productName", value: order.productName),
+    ]
+    guard let url = comps.url else { return }
+    var req = URLRequest(url: url)
+    req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Accept")
+    guard let (data, res) = try? await URLSession.shared.data(for: req),
+          let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode),
+          let decoded = try? JSONDecoder().decode(AllocateForOrderResponse.self, from: data),
+          let loc = decoded.location, !loc.isEmpty
+    else { return }
+    await MainActor.run {
+      allocatedLocationByOrderNumber[order.orderNumber] = loc
+    }
+  }
+
   private func loadMarked() async {
     guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
     var comps = URLComponents(url: baseURL.appendingPathComponent("api/shipping-fulfillment/marked"), resolvingAgainstBaseURL: false)!
@@ -693,8 +743,9 @@ private struct ShipmentInfo: Decodable {
 
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    shipByDate = try c.decodeIfPresent(String.self, forKey: .shipByDate)
-      ?? c.decodeIfPresent(String.self, forKey: .ship_by_date)
+    let byDate = try c.decodeIfPresent(String.self, forKey: .shipByDate)
+    let byDateAlt = try c.decodeIfPresent(String.self, forKey: .ship_by_date)
+    shipByDate = byDate ?? byDateAlt
   }
 }
 
@@ -716,12 +767,15 @@ private struct VerifyOrderSheet: View {
   /// True when we have an assigned slot (SKU); false when falling back to style code.
   let isVerifyingBySlot: Bool
   let onClose: () -> Void
+  let onPrintShippingLabel: () -> Void
   @State private var showScanner = false
   @State private var verificationResult: String?
   @State private var torchOn = false
   @State private var showMatchDebug = false
   @State private var matchDebugText: String = ""
   @State private var isLoadingMatchDebug = false
+  @State private var isPrintingSKULabel = false
+  @State private var reprintBanner: String?
 
   private var requiredLabel: String {
     isVerifyingBySlot ? "Required (SKU):" : "Required (Style ID):"
@@ -842,25 +896,124 @@ private struct VerifyOrderSheet: View {
           .padding(.horizontal, 16)
 
           if let result = verificationResult {
-            Text(result)
-              .font(.headline)
-              .foregroundStyle(result.hasPrefix("Correct") ? NeonTheme.accentEmerald : Color.red)
-              .padding(.horizontal)
+            VerifyResultCard(
+              message: result,
+              isCorrect: result.hasPrefix("Correct")
+            )
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
           }
 
-          Button {
-            verificationResult = nil
-            showScanner = true
-          } label: {
-            HStack {
-              Image(systemName: "barcode.viewfinder")
-              Text("Scan to verify")
+          let isCorrect = verificationResult?.hasPrefix("Correct") == true
+
+          if isCorrect {
+            Button {
+              onPrintShippingLabel()
+            } label: {
+              HStack {
+                Image(systemName: "shippingbox.fill")
+                Text("Print shipping label")
+                  .fontWeight(.semibold)
+              }
+              .foregroundStyle(.white)
             }
-            .fontWeight(.semibold)
-            .foregroundStyle(.white)
+            .buttonStyle(NeonPrimaryButtonStyle())
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+          } else {
+            Button {
+              verificationResult = nil
+              showScanner = true
+            } label: {
+              HStack {
+                Image(systemName: "barcode.viewfinder")
+                Text("Scan to verify")
+              }
+              .fontWeight(.semibold)
+              .foregroundStyle(.white)
+            }
+            .buttonStyle(NeonPrimaryButtonStyle())
+            .padding(.horizontal, 16)
+
+            if isVerifyingBySlot {
+              Button {
+                Task {
+                  reprintBanner = nil
+                  isPrintingSKULabel = true
+                  let sku = requiredScanValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                  let img = await LabelPrinting.loadProductImage(urlString: order.imageUrl)
+                  let pdf = LabelPrinting.makeLabelPDF(
+                    sku: sku,
+                    productName: order.productName,
+                    productSize: order.size.isEmpty ? nil : order.size,
+                    styleId: order.sku.isEmpty ? nil : order.sku,
+                    productImage: img,
+                    isTest: false
+                  )
+                  LabelPrinting.presentPrintSheet(
+                    pdfData: pdf,
+                    jobName: "FlipFlow SKU \(sku)"
+                  ) { completed, error in
+                    Task { @MainActor in
+                      isPrintingSKULabel = false
+                      if let error {
+                        reprintBanner = "Print failed: \((error as NSError).localizedDescription)"
+                      } else if completed {
+                        reprintBanner = "Sent to printer."
+                      } else {
+                        reprintBanner = "Print canceled."
+                      }
+                    }
+                  }
+                }
+              } label: {
+                HStack {
+                  Image(systemName: "printer.fill")
+                  if isPrintingSKULabel {
+                    ProgressView()
+                      .tint(.white)
+                    Text("Printing…")
+                      .fontWeight(.semibold)
+                  } else {
+                    Text("Reprint SKU label")
+                      .fontWeight(.semibold)
+                  }
+                }
+                .foregroundStyle(.white)
+              }
+              .disabled(isPrintingSKULabel)
+              .buttonStyle(NeonPrimaryButtonStyle())
+              .padding(.horizontal, 16)
+
+              if let msg = reprintBanner {
+                Text(msg)
+                  .font(.caption)
+                  .foregroundStyle(NeonTheme.textSecondary)
+              }
+            }
           }
-          .buttonStyle(NeonPrimaryButtonStyle())
-          .padding(.horizontal, 16)
+
+          HStack(spacing: 16) {
+            Button {
+              UINotificationFeedbackGenerator().notificationOccurred(.success)
+              AudioServicesPlaySystemSound(1057)
+              verificationResult = "Correct item."
+            } label: {
+              Text("Test success")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(NeonTheme.accentCyan)
+            }
+            Button {
+              UINotificationFeedbackGenerator().notificationOccurred(.error)
+              AudioServicesPlaySystemSound(1320)
+              verificationResult = "Wrong item – expected SKU \(requiredScanValue)."
+            } label: {
+              Text("Test fail")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(NeonTheme.accentCyan)
+            }
+          }
+          .padding(.top, 20)
 
           Spacer()
         }
@@ -905,16 +1058,60 @@ private struct VerifyOrderSheet: View {
             Task { @MainActor in
               showScanner = false
               if scanNorm.isEmpty {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                AudioServicesPlaySystemSound(1320)
                 verificationResult = "No barcode value."
               } else if scanNorm == requiredNorm {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                AudioServicesPlaySystemSound(1057)
                 verificationResult = "Correct item."
               } else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                AudioServicesPlaySystemSound(1320)
                 verificationResult = "Wrong item – expected \(expectedKindInMessage) \(requiredNorm)."
               }
             }
           },
           onClose: { Task { @MainActor in showScanner = false } }
         )
+      }
+    }
+  }
+}
+
+private struct VerifyResultCard: View {
+  let message: String
+  let isCorrect: Bool
+  @State private var didAppear = false
+
+  var body: some View {
+    VStack(spacing: 24) {
+      Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+        .font(.system(size: 110, weight: .medium))
+        .foregroundStyle(isCorrect ? NeonTheme.accentEmerald : Color.red)
+        .scaleEffect(didAppear ? 1 : 0.3)
+        .opacity(didAppear ? 1 : 0)
+
+      Text(message)
+        .font(.title.weight(.semibold))
+        .multilineTextAlignment(.center)
+        .foregroundStyle(isCorrect ? NeonTheme.accentEmerald : Color.red)
+        .padding(.horizontal, 12)
+    }
+    .frame(maxWidth: .infinity, minHeight: 220)
+    .padding(.vertical, 40)
+    .padding(.horizontal, 24)
+    .background(
+      RoundedRectangle(cornerRadius: 24, style: .continuous)
+        .fill((isCorrect ? NeonTheme.accentEmerald : Color.red).opacity(0.12))
+        .overlay(
+          RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .stroke(isCorrect ? NeonTheme.accentEmerald : Color.red, lineWidth: 2)
+        )
+    )
+    .onAppear {
+      withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+        didAppear = true
       }
     }
   }

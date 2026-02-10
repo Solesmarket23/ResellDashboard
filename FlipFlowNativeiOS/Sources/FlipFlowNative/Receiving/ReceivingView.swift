@@ -276,32 +276,32 @@ private struct ReceivingScreen: View {
   @ViewBuilder
   private func duplicateTrackingWarningCard(_ warning: ReceivingViewModel.DuplicateTrackingWarning) -> some View {
     ZStack {
-      Color.black.opacity(0.5)
+      Color.black.opacity(0.78)
         .ignoresSafeArea()
         .onTapGesture { }
-      NeonCard {
-        VStack(alignment: .leading, spacing: 14) {
-          Text("Already processed")
-            .font(.headline.weight(.semibold))
-            .foregroundStyle(NeonTheme.textPrimary)
-          Text(warning.message)
-            .font(.subheadline)
-            .foregroundStyle(NeonTheme.textSecondary)
-          HStack(spacing: 12) {
-            Button("Cancel") {
-              vm.clearSelectionAndTrackingAfterDuplicateCancel()
-            }
-            .foregroundStyle(NeonTheme.textSecondary)
-            Button("Continue anyway") {
-              vm.dismissDuplicateTrackingWarning()
-            }
-            .fontWeight(.semibold)
-            .foregroundStyle(NeonTheme.accentCyan)
+      VStack(alignment: .leading, spacing: 14) {
+        Text("Already processed")
+          .font(.headline.weight(.semibold))
+          .foregroundStyle(.white)
+        Text(warning.message)
+          .font(.subheadline)
+          .foregroundStyle(Color.white.opacity(0.85))
+        HStack(spacing: 12) {
+          Button("Cancel") {
+            vm.clearSelectionAndTrackingAfterDuplicateCancel()
           }
-          .frame(maxWidth: .infinity, alignment: .trailing)
+          .foregroundStyle(Color.white.opacity(0.7))
+          Button("Continue anyway") {
+            vm.dismissDuplicateTrackingWarning()
+          }
+          .fontWeight(.semibold)
+          .foregroundStyle(NeonTheme.accentCyan)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .trailing)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(24)
+      .background(Color(white: 0.14).opacity(0.98), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
       .padding(.horizontal, 24)
     }
   }
@@ -548,6 +548,23 @@ private struct ReceivingScreen: View {
                 }
               }
             }
+
+            if vm.isStep1Complete && (!vm.isStep2Complete || !vm.isStep3Complete) {
+              Button {
+                vm.skipSteps2And3ForTesting()
+                expanded.insert(.result)
+                vm.flowStep = .result
+              } label: {
+                HStack {
+                  Image(systemName: "arrow.down.circle.fill")
+                  Text("Assign slot & finish")
+                    .fontWeight(.semibold)
+                }
+                .foregroundStyle(.white)
+              }
+              .buttonStyle(NeonPrimaryButtonStyle())
+              .padding(.top, 10)
+            }
           }
         } else {
           if let selected = vm.selected {
@@ -612,7 +629,7 @@ private struct ReceivingScreen: View {
             vm.skipSteps2And3ForTesting()
             expanded.insert(.result)
           } label: {
-            Text("Skip to result (testing)")
+            Text("Skip verification")
               .font(.caption.weight(.medium))
               .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
           }
@@ -686,7 +703,7 @@ private struct ReceivingScreen: View {
             vm.skipSteps2And3ForTesting()
             expanded.insert(.result)
           } label: {
-            Text("Skip to result (testing)")
+            Text("Skip verification")
               .font(.caption.weight(.medium))
               .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
           }
@@ -933,6 +950,21 @@ private struct ReceivingScreen: View {
             .padding(.top, 2)
           }
 
+          if vm.selected?.received == false {
+            Button {
+              Task { await vm.markReceived(method: vm.trackingEntryMethod) }
+            } label: {
+              HStack {
+                Image(systemName: "checkmark.circle.fill")
+                Text("Mark as received")
+                  .fontWeight(.semibold)
+              }
+              .foregroundStyle(.white)
+            }
+            .buttonStyle(NeonPrimaryButtonStyle())
+            .padding(.top, 2)
+          }
+
           Button {
             Task {
               let didReset = await vm.completeCurrentItemAndStartNext()
@@ -1044,11 +1076,11 @@ private struct NeonConfirmDialog: View {
 
   var body: some View {
     ZStack {
-      Color.black.opacity(0.55)
+      Color.black.opacity(0.78)
         .ignoresSafeArea()
         .onTapGesture { onCancel() }
 
-      NeonCard {
+      VStack(spacing: 0) {
         VStack(alignment: .leading, spacing: 10) {
           Text(title)
             .font(.headline)
@@ -1085,8 +1117,15 @@ private struct NeonConfirmDialog: View {
           }
           .padding(.top, 4)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(white: 0.14).opacity(0.98), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(NeonTheme.border, lineWidth: 1)
+        )
       }
-      .padding(.horizontal, 18)
+      .padding(.horizontal, 24)
     }
     .accessibilityElement(children: .contain)
   }

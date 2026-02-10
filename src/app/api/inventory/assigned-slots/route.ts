@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
       id: string;
       orderNumber: string | null;
       productName: string | null;
+      size: string | null;
       pickLocation: string;
       updatedAt: string | null;
     }> = [];
@@ -59,10 +60,18 @@ export async function GET(request: NextRequest) {
         data?.product?.productName ??
         data?.title ??
         null;
+      const sizeRaw =
+        data?.size ??
+        data?.product?.size ??
+        data?.variant?.size ??
+        data?.product?.variantValue ??
+        null;
+      const size = sizeRaw != null && String(sizeRaw).trim() !== '' ? String(sizeRaw).trim() : null;
       items.push({
         id: doc.id,
         orderNumber: data?.orderNumber ?? data?.order_number ?? null,
         productName: typeof productName === 'string' ? productName : null,
+        size,
         pickLocation: loc,
         updatedAt: data?.updatedAt ?? null,
       });

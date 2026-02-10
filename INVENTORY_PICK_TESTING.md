@@ -120,6 +120,21 @@ If Ready to Ship shows **"Required (Style ID)"** instead of **"Required (SKU): A
 
 ---
 
+## Mark as received in the iOS app
+
+If Match debug shows a slot (e.g. A1) but **received: NO**, that item won’t be used for allocation until it’s marked received.
+
+**Quick way (one tap):**
+
+1. **Receiving** → turn **trial mode OFF** and **Enable web sync (writes) ON** (menu).
+2. Enter or scan the **tracking number** for that item so it loads as the selected item.
+3. Go to **Step 4 Result** (expand if needed). If the item is not yet received, a **"Mark as received"** button appears.
+4. Tap **"Mark as received"**. The app saves `received: true` to Firebase; Ready to Ship / allocation will then use that slot.
+
+**Full flow:** Complete all four steps (Tracking → StockX tag → Verify QR → Result), then tap **"Start next item"**. That also marks the current item received (when trial mode is OFF and web sync is ON).
+
+---
+
 ## How to test end-to-end
 
 ### Option A: Test with receiving + assign to bin (product-name allocation)
