@@ -110,6 +110,16 @@ So: **yes, you “process” inventory by receiving (and optionally scanning) an
 
 ---
 
+## Testing "why isn't it showing the SKU?" (product name match debug)
+
+If Ready to Ship shows **"Required (Style ID)"** instead of **"Required (SKU): A1"**, allocation didn't find a matching received item. Usually that's because the **product name** from the StockX order doesn't exactly match the **product name** on your purchase in Firebase.
+
+**In the app:** Open **Ship → Ready to Ship** → tap **Verify** on an order that shows Style ID → tap **"Debug: why no SKU match?"**. A sheet shows the order's product name (and normalized form) and every received purchase with a pick location, with its product name, normalized form, pick location, and **match** (`exact`, `containment`, or `none`). Compare the normalized strings to see why a match failed.
+
+**Via API:** **GET** `/api/inventory/match-debug?productName=...` with the same auth as allocate-for-order. Response includes `requestedProductName`, `normalizedRequested`, and `purchases[]` with `productName`, `normalized`, `pickLocation`, `matchType`, `reason`.
+
+---
+
 ## How to test end-to-end
 
 ### Option A: Test with receiving + assign to bin (product-name allocation)

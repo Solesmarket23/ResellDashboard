@@ -31,10 +31,13 @@ function normalizeProductName(name: string | null | undefined): string {
     .replace(/\s+/g, ' ');
 }
 
+/** Min length for a name to be used in containment match (avoids "Hoodie" matching everything). */
+const MIN_CONTAINMENT_LENGTH = 15;
+
 /**
  * GET /api/inventory/allocate-for-order?orderNumber=04-XXX&productName=Fear%20of%20God%20Essentials%20...
- * Finds a received purchase with matching product name (exact match after normalize), FIFO (oldest first),
- * that has a pick location and is not yet allocated. Allocates it to this order and returns the location.
+ * Finds a received purchase with matching product name (exact match first; then one name contains the other),
+ * FIFO (oldest first), that has a pick location and is not yet allocated. Allocates it and returns the location.
  * Idempotent: if this order already has an allocation, returns that location.
  * Auth: Bearer (native) or userId cookie/header.
  */
@@ -87,7 +90,9 @@ export async function GET(request: NextRequest) {
       .where('received', '==', true)
       .get();
 
-    const candidates: Array<{ id: string; data: any; receivedAt: string }> = [];
+    const wantedLower = wantedName.toLowerCase();
+
+    const candidates: Array<{ id: string; data: any; receivedAt: string; exact: boolean }> = [];
     snap.docs.forEach((doc) => {
       const data = doc.data() as any;
       const pickLocation = data?.pickLocation ?? data?.pick_location;
@@ -97,12 +102,22 @@ export async function GET(request: NextRequest) {
       const name =
         data?.productName ?? data?.product?.productName ?? data?.product?.name ?? data?.name ?? '';
       const normalized = normalizeProductName(name);
-      if (normalized.toLowerCase() !== wantedName.toLowerCase()) return;
+      const purchaseLower = normalized.toLowerCase();
+
+      const exactMatch = purchaseLower === wantedLower;
+      const containmentMatch =
+        purchaseLower.length >= MIN_CONTAINMENT_LENGTH &&
+        wantedLower.length >= MIN_CONTAINMENT_LENGTH &&
+        (wantedLower.includes(purchaseLower) || purchaseLower.includes(wantedLower));
+
+      if (!exactMatch && !containmentMatch) return;
+
       const receivedAt = data?.receivedAt ?? data?.received_at ?? data?.createdAt ?? data?.created_at ?? '';
-      candidates.push({ id: doc.id, data, receivedAt: String(receivedAt) });
+      candidates.push({ id: doc.id, data, receivedAt: String(receivedAt), exact: exactMatch });
     });
 
     candidates.sort((a, b) => {
+      if (a.exact !== b.exact) return a.exact ? -1 : 1;
       if (!a.receivedAt) return 1;
       if (!b.receivedAt) return -1;
       return a.receivedAt.localeCompare(b.receivedAt);

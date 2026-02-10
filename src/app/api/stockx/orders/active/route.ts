@@ -34,6 +34,15 @@ function imageUrlFromCatalogProduct(product: any): string | null {
   return typeof url === 'string' && url.trim() ? url.trim() : null;
 }
 
+/** Normalize shipment so iOS gets shipByDate (camelCase) whether upstream uses shipByDate or ship_by_date. */
+function normalizeShipment(shipment: any): any {
+  if (!shipment || typeof shipment !== 'object') return shipment;
+  const shipBy =
+    shipment.shipByDate ?? shipment.ship_by_date ?? (typeof (shipment as any).ShipByDate === 'string' ? (shipment as any).ShipByDate : null);
+  if (shipBy == null) return shipment;
+  return { ...shipment, shipByDate: shipBy };
+}
+
 /** Extract image URL from an order (list or enriched) from all known StockX response shapes. */
 function imageUrlFromOrder(order: any): string | null {
   if (!order || typeof order !== 'object') return null;
@@ -445,7 +454,7 @@ export async function GET(request: NextRequest) {
           buyerLocation: order.shippingAddress?.city || 'Unknown',
           shippingMethod: order.shippingMethod || 'Standard',
           imageUrl: imageUrlFromOrder(order),
-          shipment: order.shipment,
+          shipment: normalizeShipment(order.shipment),
           authenticationDetails: order.authenticationDetails,
           inventoryType: order.inventoryType,
         };
