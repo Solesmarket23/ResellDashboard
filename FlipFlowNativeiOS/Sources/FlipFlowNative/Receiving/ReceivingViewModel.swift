@@ -126,6 +126,24 @@ final class ReceivingViewModel: ObservableObject {
     }
   }
 
+  /// Re-fetch matches by current tracking and restore selection (e.g. after assigning pick location so UI shows updated pickLocation).
+  func refreshCurrentSelection() async {
+    let currentId = selected?.id
+    let tracking = trackingInput.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !tracking.isEmpty, let userId = userIdProvider() else { return }
+    do {
+      let found = try await repo.findPurchasesByTracking(trackingNumber: tracking, userId: userId)
+      matches = found
+      if let id = currentId, let match = found.first(where: { $0.id == id }) {
+        selected = match
+      } else {
+        selected = found.first
+      }
+    } catch {
+      // Keep current state on refresh failure
+    }
+  }
+
   func applyScanPayload(_ raw: String) {
     let payload = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !payload.isEmpty else { return }

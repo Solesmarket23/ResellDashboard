@@ -38,6 +38,8 @@ struct PurchaseMatch: Identifiable, Hashable {
   let unitNumber: Int?
   let sku: String?
   let styleId: String?
+  /// Bin/slot for picking (e.g. A43). When set, "Assign to next slot" should not assign again.
+  let pickLocation: String?
 
   let productName: String?
   let productBrand: String?
@@ -58,6 +60,7 @@ struct PurchaseMatch: Identifiable, Hashable {
     self.unitNumber = (data["unitNumber"] as? Int) ?? (data["unitNumber"] as? NSNumber)?.intValue
     self.sku = Self.pickString(data, keys: ["sku", "skuCode", "sku_code", "inventorySku"])
     self.styleId = Self.pickString(data, keys: ["styleId", "style_id"]) ?? Self.pickNestedString(data, path: ["product", "styleId"]) ?? Self.pickNestedString(data, path: ["product", "style_id"])
+    self.pickLocation = Self.pickString(data, keys: ["pickLocation", "pick_location"])
 
     self.productName =
       Self.pickString(data, keys: ["productName", "title"]) ??

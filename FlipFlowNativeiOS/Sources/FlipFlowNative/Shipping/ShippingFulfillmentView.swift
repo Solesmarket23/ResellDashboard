@@ -61,6 +61,8 @@ private struct ShippingHostView: View {
             PickVerificationView(userId: userId)
           case .inventory:
             InventoryLocationsView(userId: userId)
+          case .assignedSlots:
+            AssignedSlotsView(userId: userId)
           }
         }
       }
@@ -105,6 +107,12 @@ private struct ShippingHostView: View {
           icon: "location.fill",
           title: "Pick locations",
           subtitle: "SKU → bin/shelf so Ready to Ship shows where to pick"
+        )
+        ShippingOptionCard(
+          route: .assignedSlots,
+          icon: "number.square.fill",
+          title: "Assigned slots",
+          subtitle: "View all slots (SKUs) you assigned — swipe to delete and reset"
         )
       }
       .padding(.horizontal, 16)
@@ -155,4 +163,5 @@ private enum ShippingRoute: Hashable {
   case reconciliation
   case pickVerification
   case inventory
+  case assignedSlots
 }

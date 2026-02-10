@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getAdminDb } from '@/lib/firebase/firebaseAdmin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { resolveNativeAuthUserId } from '@/lib/nativeAuthResolver';
 import { COLLECTIONS } from '@/lib/firebase/collections';
 
@@ -29,8 +30,8 @@ async function requireUserId(request: NextRequest): Promise<string | null> {
 
 /**
  * POST /api/purchases/set-pick-location
- * Body: { "purchaseId": "...", "location": "C12" }
- * Sets the bin/slot where this received item is stored so it can be allocated for a sale (product-name match, FIFO).
+ * Body: { "purchaseId": "...", "location": "C12" } to set, or { "purchaseId": "...", "clear": true } to remove.
+ * Sets or clears the bin/slot where this received item is stored.
  * Auth: Bearer (native) or userId cookie/query/header.
  */
 export async function POST(request: NextRequest) {
@@ -42,12 +43,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const purchaseId = (body?.purchaseId ?? '').toString().trim();
+    const clear = body?.clear === true;
     const location = (body?.location ?? '').toString().trim();
     if (!purchaseId) {
       return NextResponse.json({ success: false, error: 'purchaseId is required' }, { status: 400 });
     }
-    if (!location) {
-      return NextResponse.json({ success: false, error: 'location is required (e.g. C12)' }, { status: 400 });
+    if (!clear && !location) {
+      return NextResponse.json({ success: false, error: 'location is required (e.g. C12) or set clear: true' }, { status: 400 });
     }
 
     const adminDb = getAdminDb();
@@ -64,6 +66,18 @@ export async function POST(request: NextRequest) {
     const owner = String(data?.userId ?? data?.uid ?? '').trim();
     if (owner !== userId) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
+    }
+
+    if (clear) {
+      await ref.update({
+        pickLocation: FieldValue.delete(),
+        updatedAt: new Date().toISOString(),
+      });
+      return NextResponse.json({
+        success: true,
+        purchaseId,
+        cleared: true,
+      });
     }
 
     const locationNorm = location.toUpperCase();

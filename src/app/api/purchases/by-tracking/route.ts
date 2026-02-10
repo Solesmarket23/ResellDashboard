@@ -168,6 +168,7 @@ export async function GET(request: NextRequest) {
           deliveredAt: data?.actualDelivery || data?.deliveredAt || data?.shipment?.deliveredAt || null,
           received: !!data?.received,
           receivedAt: data?.receivedAt || null,
+          pickLocation: (data?.pickLocation ?? data?.pick_location ?? '').toString().trim() || null,
           pricing: {
             gross,
             credits,

@@ -192,6 +192,7 @@ private struct ReceivingScreen: View {
       if (200 ..< 300).contains(http.statusCode) {
         vm.banner = "Assigned to \(assignBinLocation). Ready to Ship will use this for matching sales."
         showAssignBinSheet = false
+        await vm.refreshCurrentSelection()
         return
       }
       if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -247,6 +248,7 @@ private struct ReceivingScreen: View {
       if (200 ..< 300).contains(setHttp.statusCode) {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         vm.banner = "Assigned to \(location). Ready to Ship will use this for matching."
+        await vm.refreshCurrentSelection()
         return
       }
       if let json = try? JSONSerialization.jsonObject(with: setData) as? [String: Any],
@@ -747,10 +749,16 @@ private struct ReceivingScreen: View {
                 return
               }
               do {
-                let sku = try await vm.assignSku()
+                // Use pick location (e.g. A43) as the SKU on the label when set; otherwise assign/get legacy SKU.
+                let skuForLabel: String
+                if let loc = selected.pickLocation, !loc.trimmingCharacters(in: .whitespaces).isEmpty {
+                  skuForLabel = loc.trimmingCharacters(in: .whitespaces)
+                } else {
+                  skuForLabel = try await vm.assignSku()
+                }
                 let img = await LabelPrinting.loadProductImage(urlString: selected.productImageUrl)
                 let pdf = LabelPrinting.makeLabelPDF(
-                  sku: sku,
+                  sku: skuForLabel,
                   productName: selected.productName,
                   productSize: selected.productSize,
                   styleId: selected.styleId,
@@ -760,7 +768,7 @@ private struct ReceivingScreen: View {
                 vm.banner = "Opening print dialog…"
                 LabelPrinting.presentPrintSheet(
                   pdfData: pdf,
-                  jobName: "FlipFlow SKU \(sku)"
+                  jobName: "FlipFlow SKU \(skuForLabel)"
                 ) { completed, error in
                   Task { @MainActor in
                     isPrintingLabel = false
@@ -801,39 +809,56 @@ private struct ReceivingScreen: View {
           .padding(.top, 2)
         }
 
-          Button {
-            Task { await assignToNextAvailableSlot() }
-          } label: {
-            HStack {
-              Image(systemName: "location.fill")
-              if isAssigningToNextSlot {
-                ProgressView()
-                  .tint(.white)
-                Text("Assigning…")
-                  .fontWeight(.semibold)
-              } else {
-                Text("Assign to next slot")
-                  .fontWeight(.semibold)
-              }
+          if let loc = vm.selected?.pickLocation, !loc.trimmingCharacters(in: .whitespaces).isEmpty {
+            Text("Location: \(loc)")
+              .font(.subheadline.weight(.semibold))
+              .foregroundStyle(NeonTheme.accentEmerald)
+              .padding(.top, 6)
+            Button {
+              assignBinLocation = loc
+              assignBinBanner = nil
+              showAssignBinSheet = true
+            } label: {
+              Text("Change slot…")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(NeonTheme.accentCyan)
             }
-            .foregroundStyle(.white)
-          }
-          .buttonStyle(NeonPrimaryButtonStyle())
-          .disabled(vm.selected == nil || isAssigningToNextSlot)
-          .opacity(vm.selected == nil ? 0.6 : 1)
-          .padding(.top, 6)
+            .padding(.top, 2)
+          } else {
+            Button {
+              Task { await assignToNextAvailableSlot() }
+            } label: {
+              HStack {
+                Image(systemName: "location.fill")
+                if isAssigningToNextSlot {
+                  ProgressView()
+                    .tint(.white)
+                  Text("Assigning…")
+                    .fontWeight(.semibold)
+                } else {
+                  Text("Assign to next slot")
+                    .fontWeight(.semibold)
+                }
+              }
+              .foregroundStyle(.white)
+            }
+            .buttonStyle(NeonPrimaryButtonStyle())
+            .disabled(vm.selected == nil || isAssigningToNextSlot)
+            .opacity(vm.selected == nil ? 0.6 : 1)
+            .padding(.top, 6)
 
-          Button {
-            assignBinLocation = ""
-            assignBinBanner = nil
-            showAssignBinSheet = true
-          } label: {
-            Text("Or choose a specific slot…")
-              .font(.subheadline.weight(.medium))
-              .foregroundStyle(NeonTheme.accentCyan)
+            Button {
+              assignBinLocation = ""
+              assignBinBanner = nil
+              showAssignBinSheet = true
+            } label: {
+              Text("Or choose a specific slot…")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(NeonTheme.accentCyan)
+            }
+            .disabled(vm.selected == nil)
+            .padding(.top, 2)
           }
-          .disabled(vm.selected == nil)
-          .padding(.top, 2)
 
           Button {
             Task {
