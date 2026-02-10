@@ -110,9 +110,73 @@ export async function GET(request: NextRequest) {
     if (!res.ok) {
       const text = await res.text();
       const is404 = res.status === 404;
-      const userMessage = is404
-        ? 'No shipping label available for this order. Shipping labels are only available for Standard/Direct orders.'
-        : 'StockX shipping-document API error';
+
+      if (is404) {
+        // Try fallback: order details often include shipment.shippingDocumentUrl even when list returns 404
+        const orderDetailsUrl = `https://api.stockx.com/v2/selling/orders/${encodeURIComponent(orderNumber)}`;
+        const orderRes = await fetch(orderDetailsUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-api-key': apiKey,
+            Accept: 'application/json',
+            'User-Agent': 'ResellDashboard/1.0',
+          },
+        });
+        if (orderRes.ok) {
+          const orderData = (await orderRes.json()) as Record<string, unknown>;
+          const shipment = orderData?.shipment as Record<string, unknown> | undefined;
+          const shippingDocumentUrl = (shipment?.shippingDocumentUrl ?? shipment?.shippingDocumentURL) as
+            | string
+            | undefined;
+          if (shippingDocumentUrl && typeof shippingDocumentUrl === 'string') {
+            const match = shippingDocumentUrl.match(/\/shipping-document\/([^/?#]+)$/);
+            if (match?.[1]) {
+              const fallbackId = match[1];
+              const json = NextResponse.json({
+                success: true,
+                orderNumber,
+                shippingId: fallbackId,
+                shippingDocuments: { requiredDocuments: { label: fallbackId } },
+                _fromOrderDetails: true,
+              });
+              if (usedCookieAuth && accessToken && accessToken !== cookieStore.get('stockx_access_token')?.value) {
+                setStockXTokenCookies(json, accessToken, refreshToken);
+              }
+              return json;
+            }
+          }
+        }
+      }
+
+      let userMessage: string;
+      if (is404) {
+        userMessage =
+          'No shipping label available for this order. Shipping labels are only available for Standard/Direct orders.';
+      } else {
+        // Surface status and optional StockX message so the user knows why it failed
+        let detail = '';
+        try {
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          const msg =
+            (parsed?.message as string) ||
+            (parsed?.error as string) ||
+            (parsed?.errorMessage as string) ||
+            (Array.isArray(parsed?.errors) && (parsed.errors[0] as { message?: string })?.message);
+          if (msg && typeof msg === 'string' && msg.length < 200) detail = `: ${msg}`;
+        } catch {
+          if (text && text.length < 120 && !text.startsWith('<')) detail = `: ${text}`;
+        }
+        const statusLabel =
+          res.status === 401
+            ? 'StockX sign-in expired or not connected'
+            : res.status === 403
+              ? 'Not allowed for this order'
+              : res.status === 400
+                ? 'Invalid order number or request'
+                : `StockX API error (${res.status})`;
+        userMessage = `${statusLabel}${detail}. Shipping labels are for Standard/Direct orders only.`;
+      }
       return NextResponse.json(
         {
           success: false,
@@ -120,7 +184,7 @@ export async function GET(request: NextRequest) {
           orderNumber,
           statusCode: res.status,
           details: text,
-          note: is404 ? undefined : 'This endpoint only supports Direct order types.',
+          note: is404 ? undefined : 'Connect StockX on the web (same account) if you see sign-in/not connected.',
         },
         { status: res.status }
       );

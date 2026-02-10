@@ -109,9 +109,33 @@ export async function GET(request: NextRequest) {
     if (!res.ok) {
       const text = await res.text();
       const is404 = res.status === 404;
-      const userMessage = is404
-        ? 'No shipping label available for this order. Shipping labels are only available for Standard/Direct orders.'
-        : 'StockX shipping-document PDF error';
+      let userMessage: string;
+      if (is404) {
+        userMessage =
+          'No shipping label available for this order. Shipping labels are only available for Standard/Direct orders.';
+      } else {
+        let detail = '';
+        try {
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          const msg =
+            (parsed?.message as string) ||
+            (parsed?.error as string) ||
+            (parsed?.errorMessage as string) ||
+            (Array.isArray(parsed?.errors) && (parsed.errors[0] as { message?: string })?.message);
+          if (msg && typeof msg === 'string' && msg.length < 200) detail = `: ${msg}`;
+        } catch {
+          if (text && text.length < 120 && !text.startsWith('<')) detail = `: ${text}`;
+        }
+        const statusLabel =
+          res.status === 401
+            ? 'StockX sign-in expired or not connected'
+            : res.status === 403
+              ? 'Not allowed for this order'
+              : res.status === 400
+                ? 'Invalid order number or request'
+                : `StockX API error (${res.status})`;
+        userMessage = `${statusLabel}${detail}. Shipping labels are for Standard/Direct orders only.`;
+      }
       return NextResponse.json(
         {
           success: false,

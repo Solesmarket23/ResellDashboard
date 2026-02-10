@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Enter order number, fetch shipping document list then PDF, print via Air Print. Handles 404 with clear message.
+/// Enter order number (or paste shippingDocumentUrl), fetch shipping document list then PDF, print via Air Print.
+/// If input is a StockX shippingDocumentUrl we skip the list call and request the PDF directly.
 struct PrintLabelView: View {
   @EnvironmentObject private var auth: AuthViewModel
   let userId: String
@@ -28,7 +29,7 @@ struct PrintLabelView: View {
             Text("Order number")
               .font(.subheadline.weight(.medium))
               .foregroundStyle(NeonTheme.textSecondary)
-            TextField("e.g. 06-XXXXX", text: $orderNumber)
+            TextField("e.g. 06-XXXXX or paste shippingDocumentUrl", text: $orderNumber)
               .textFieldStyle(.plain)
               .neonTextFieldStyle()
               .autocapitalization(.none)
@@ -77,8 +78,8 @@ struct PrintLabelView: View {
   }
 
   private func fetchAndPrint() async {
-    let order = orderNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !order.isEmpty,
+    let raw = orderNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !raw.isEmpty,
           let bearer = try? await auth.getApiBearerToken(forcingRefresh: false),
           !bearer.isEmpty
     else {
@@ -90,46 +91,64 @@ struct PrintLabelView: View {
     bannerMessage = nil
     defer { Task { @MainActor in isPrinting = false } }
 
-    // 1) GET shipping-document list
-    var listURL = baseURL.appendingPathComponent("api/stockx/shipping-document")
-    var comps = URLComponents(url: listURL, resolvingAgainstBaseURL: false)!
-    comps.queryItems = [URLQueryItem(name: "orderNumber", value: order)]
-    guard let listReqURL = comps.url else {
-      await MainActor.run { bannerMessage = "Invalid URL." }
-      return
-    }
-    var listReq = URLRequest(url: listReqURL)
-    listReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-    listReq.setValue("application/json", forHTTPHeaderField: "Accept")
-
-    let (listData, listResp): (Data, URLResponse)
-    do {
-      (listData, listResp) = try await URLSession.shared.data(for: listReq)
-    } catch {
-      await MainActor.run { bannerMessage = "Network error: \(error.localizedDescription)" }
-      return
+    let (order, shippingIdFromUrl) = parseOrderNumberOrShippingDocumentUrl(raw)
+    if let urlShippingId = shippingIdFromUrl {
+      await MainActor.run { orderNumber = order }
     }
 
-    let listStatus = (listResp as? HTTPURLResponse)?.statusCode ?? 0
-    if listStatus != 200 {
-      let decoded = try? JSONDecoder().decode(ShippingErrorResponse.self, from: listData)
-      let userMsg = decoded?.error ?? "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
-      await MainActor.run {
-        alertMessage = userMsg
-        showAlert = true
+    var shippingId: String
+    if let fromUrl = shippingIdFromUrl {
+      shippingId = fromUrl
+    } else {
+      // 1) GET shipping-document list
+      var listURL = baseURL.appendingPathComponent("api/stockx/shipping-document")
+      var comps = URLComponents(url: listURL, resolvingAgainstBaseURL: false)!
+      comps.queryItems = [URLQueryItem(name: "orderNumber", value: order)]
+      guard let listReqURL = comps.url else {
+        await MainActor.run { bannerMessage = "Invalid URL." }
+        return
       }
-      return
-    }
+      var listReq = URLRequest(url: listReqURL)
+      listReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+      listReq.setValue("application/json", forHTTPHeaderField: "Accept")
 
-    // Parse list to get first shippingId (e.g. from shippingDocuments.thermalLabelOnly or requiredDocuments)
-    guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any],
-          let shippingId = extractFirstShippingId(from: listJson)
-    else {
-      await MainActor.run {
-        alertMessage = "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
-        showAlert = true
+      let (listData, listResp): (Data, URLResponse)
+      do {
+        (listData, listResp) = try await URLSession.shared.data(for: listReq)
+      } catch {
+        await MainActor.run { bannerMessage = "Network error: \(error.localizedDescription)" }
+        return
       }
-      return
+
+      let listStatus = (listResp as? HTTPURLResponse)?.statusCode ?? 0
+      if listStatus != 200 {
+        let decoded = try? JSONDecoder().decode(ShippingErrorResponse.self, from: listData)
+        let userMsg = decoded?.error ?? "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
+        await MainActor.run {
+          alertMessage = userMsg
+          showAlert = true
+        }
+        return
+      }
+
+      guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any] else {
+        await MainActor.run {
+          alertMessage = "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
+          showAlert = true
+        }
+        return
+      }
+      // Backend may return top-level shippingId (fallback from order details when list returns 404)
+      let firstId = (listJson["shippingId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        ?? extractFirstShippingId(from: listJson)
+      guard let sid = firstId else {
+        await MainActor.run {
+          alertMessage = "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
+          showAlert = true
+        }
+        return
+      }
+      shippingId = sid
     }
 
     // 2) GET PDF
@@ -182,6 +201,26 @@ struct PrintLabelView: View {
         }
       }
     }
+  }
+
+  /// If input is a StockX shippingDocumentUrl (e.g. .../orders/04-M60TNW9M0B/shipping-document/S-870622186),
+  /// returns (orderNumber, shippingId). Otherwise returns (trimmedInput, nil).
+  private func parseOrderNumberOrShippingDocumentUrl(_ input: String) -> (orderNumber: String, shippingId: String?) {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.contains("/orders/"), trimmed.contains("/shipping-document/") else {
+      return (trimmed, nil)
+    }
+    let pattern = #"/orders/([^/]+)/shipping-document/([^/?#]+)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+          match.numberOfRanges >= 3,
+          let orderRange = Range(match.range(at: 1), in: trimmed),
+          let idRange = Range(match.range(at: 2), in: trimmed)
+    else { return (trimmed, nil) }
+    let orderNum = String(trimmed[orderRange])
+    let shipId = String(trimmed[idRange])
+    guard !orderNum.isEmpty, !shipId.isEmpty else { return (trimmed, nil) }
+    return (orderNum, shipId)
   }
 
   private func extractFirstShippingId(from json: [String: Any]) -> String? {
