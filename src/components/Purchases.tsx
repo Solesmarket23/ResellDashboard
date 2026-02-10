@@ -3203,7 +3203,7 @@ const Purchases = () => {
                 throw new Error(errorData.details || 'Failed to update purchase');
               }
               
-              console.log(`✅ Cleared tracking in Firebase via API`);
+              console.log('[Purchases] Firebase save confirmed (cleared tracking via API):', { purchaseId });
             } catch (error) {
               console.error('Error clearing tracking in Firebase:', error);
               setNotification({
@@ -3215,11 +3215,12 @@ const Purchases = () => {
           } else {
             // Firebase authenticated user - save directly
             try {
+              console.log('[Purchases] Saving to Firebase (direct, clear tracking):', { purchaseId });
               await updateDocument('purchases', purchaseId, {
                 tracking: '',
                 carrier: null
               }, true);
-              console.log(`✅ Cleared tracking in Firebase`);
+              console.log('[Purchases] Firebase save confirmed (cleared tracking, direct):', { purchaseId });
             } catch (error) {
               console.error('Error clearing tracking in Firebase:', error);
               setNotification({
@@ -3264,16 +3265,15 @@ const Purchases = () => {
         return;
       }
 
+      const updates = { tracking: trackingNumber, carrier: updatedPurchase.carrier };
+      console.log('[Purchases] Saving to Firebase via API (tracking):', { userId, purchaseId, updateKeys: Object.keys(updates) });
       const response = await fetch('/api/purchases/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: userId,
           purchaseId: purchaseId,
-          updates: {
-            tracking: trackingNumber,
-            carrier: updatedPurchase.carrier
-          }
+          updates
         })
       });
 
@@ -3305,6 +3305,8 @@ const Purchases = () => {
         const errorData = await response.json().catch(() => null);
         throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
       }
+
+      console.log('[Purchases] Firebase save confirmed (tracking):', { purchaseId, userId });
 
       // Update in state only after server accepts the tracking number
       const allPurchases = [...purchases, ...manualPurchases];
@@ -3353,6 +3355,8 @@ const Purchases = () => {
     if (!userId || !purchaseId) return;
 
     try {
+      const updates = { tracking: trackingNumber, carrier };
+      console.log('[Purchases] Saving to Firebase via API (duplicate allowed):', { userId, purchaseId, updateKeys: Object.keys(updates) });
       const response = await fetch('/api/purchases/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3360,13 +3364,15 @@ const Purchases = () => {
           userId,
           purchaseId,
           allowDuplicateTracking: true,
-          updates: { tracking: trackingNumber, carrier }
+          updates
         })
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
       }
+
+      console.log('[Purchases] Firebase save confirmed (duplicate allowed):', { purchaseId, userId });
 
       // Ensure UI reflects the forced save (we no longer optimistically update before API response)
       setPurchases((prev) => prev.map((p: any) => (p?.id === purchaseId ? { ...p, tracking: trackingNumber, carrier } : p)));
@@ -3399,6 +3405,8 @@ const Purchases = () => {
     if (!userId || !purchaseId) return;
 
     try {
+      const updates = { tracking: trackingNumber, carrier };
+      console.log('[Purchases] Saving to Firebase via API (invalid tracking allowed):', { userId, purchaseId, updateKeys: Object.keys(updates) });
       const response = await fetch('/api/purchases/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3406,7 +3414,7 @@ const Purchases = () => {
           userId,
           purchaseId,
           allowInvalidTracking: true,
-          updates: { tracking: trackingNumber, carrier }
+          updates
         })
       });
 
@@ -3427,6 +3435,8 @@ const Purchases = () => {
         const errorData = await response.json().catch(() => null);
         throw new Error(errorData?.details || errorData?.error || 'Failed to update purchase');
       }
+
+      console.log('[Purchases] Firebase save confirmed (invalid tracking allowed):', { purchaseId, userId });
 
       setPurchases((prev) => prev.map((p: any) => (p?.id === purchaseId ? { ...p, tracking: trackingNumber, carrier } : p)));
       setManualPurchases((prev) =>
@@ -3464,19 +3474,18 @@ const Purchases = () => {
     // Get user ID from either Firebase auth or site password auth
     let userId: string | null = null;
     
+    const siteUserId = localStorage.getItem('siteUserId');
+    const isSitePasswordUser = !user && !!siteUserId;
     if (user) {
-      // Firebase user
       userId = user.uid;
+    } else if (siteUserId) {
+      userId = siteUserId;
     } else {
-      // Check for site password authentication
-      const siteUserId = localStorage.getItem('siteUserId');
-      if (siteUserId) {
-        userId = siteUserId;
-      } else {
-        console.warn('User not authenticated - cannot update status');
-        return;
-      }
+      console.warn('[Purchases] User not authenticated - cannot update status');
+      return;
     }
+
+    console.log('[Purchases] Applying status updates to Firebase:', { userId, isSitePasswordUser, count: statusUpdates.length });
 
     try {
       // Update purchases in state - force update even if status appears the same
@@ -3526,33 +3535,52 @@ const Purchases = () => {
         statusUpdates.find(update => update.orderNumber === purchase.orderNumber)
       );
 
-      // Update each modified purchase in Firebase
+      // Update each modified purchase in Firebase (API for site password users, direct for Firebase auth)
       for (const purchase of modifiedPurchases) {
-        // Only update if the purchase has a valid Firebase document ID
-        // Firebase IDs are auto-generated strings, not order numbers
-        // Skip if: no ID, looks like order number (75-XXXXX), or is just numbers/dashes
         if (!purchase.id || 
             purchase.id.startsWith('75-') || 
             purchase.id.match(/^[\d-]+$/) ||
-            purchase.id.length < 15) { // Firebase IDs are typically 20+ characters
-          console.log(`⏭️ Skipping Firebase update for ${purchase.orderNumber} - no valid Firebase document ID (id: ${purchase.id})`);
+            purchase.id.length < 15) {
+          console.log(`[Purchases] Skipping Firebase update for ${purchase.orderNumber} - no valid Firebase document ID (id: ${purchase.id})`);
           continue;
         }
-        
+
+        const payload = {
+          status: purchase.status,
+          statusColor: purchase.statusColor,
+          tracking: purchase.tracking,
+          ...(isSitePasswordUser ? {} : { userId })
+        };
+
         try {
-          await updateDocument('purchases', purchase.id, {
-            status: purchase.status,
-            statusColor: purchase.statusColor,
-            tracking: purchase.tracking,
-            userId: userId
-          });
-          console.log(`💾 Firebase updated for ${purchase.orderNumber}`);
+          if (isSitePasswordUser && userId) {
+            console.log('[Purchases] Saving to Firebase via API (status update):', { purchaseId: purchase.id, orderNumber: purchase.orderNumber, updateKeys: Object.keys(payload) });
+            const response = await fetch('/api/purchases/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, purchaseId: purchase.id, updates: payload })
+            });
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              throw new Error(err.details || err.error || 'Failed to update purchase');
+            }
+            console.log('[Purchases] Firebase save confirmed (status update):', { purchaseId: purchase.id, orderNumber: purchase.orderNumber });
+          } else {
+            console.log('[Purchases] Saving to Firebase (direct, status update):', { purchaseId: purchase.id, orderNumber: purchase.orderNumber });
+            await updateDocument('purchases', purchase.id, {
+              status: purchase.status,
+              statusColor: purchase.statusColor,
+              tracking: purchase.tracking,
+              userId: userId
+            });
+            console.log('[Purchases] Firebase save confirmed (status update, direct):', { purchaseId: purchase.id });
+          }
         } catch (error) {
-          console.error(`❌ Firebase update failed for ${purchase.orderNumber}:`, error);
+          console.error(`[Purchases] Firebase update failed for ${purchase.orderNumber}:`, error);
         }
       }
 
-      console.log(`✅ Status update complete: ${modifiedPurchases.length} purchases updated`);
+      console.log(`[Purchases] Status update complete: ${modifiedPurchases.length} purchases written to Firebase`);
       
       // Force recalculate totals to trigger UI refresh
       calculateTotals([...updatedPurchases, ...updatedManualPurchases]);
@@ -6230,6 +6258,7 @@ const Purchases = () => {
                     };
 
                     if (isSitePasswordUser && resolvedUserId) {
+                      console.log('[Purchases] Saving to Firebase via API (edit modal):', { userId: resolvedUserId, purchaseId: editingPurchase.id, updateKeys: Object.keys(updates) });
                       const resp = await fetch('/api/purchases/update', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -6243,6 +6272,7 @@ const Purchases = () => {
                         const err = await resp.json().catch(() => ({}));
                         throw new Error(err.details || err.error || 'Failed to update purchase');
                       }
+                      console.log('[Purchases] Firebase save confirmed (edit modal):', { purchaseId: editingPurchase.id });
 
                       // Refresh via API for site-password users
                       const listResp = await fetch(`/api/purchases/list?userId=${encodeURIComponent(resolvedUserId)}`, { cache: 'no-store' });
@@ -6251,7 +6281,9 @@ const Purchases = () => {
                         setPurchases(data.purchases || []);
                       }
                     } else {
+                      console.log('[Purchases] Saving to Firebase (direct, edit modal):', { purchaseId: editingPurchase.id, updateKeys: Object.keys(updates) });
                       await updateDocument('purchases', editingPurchase.id.toString(), updates);
+                      console.log('[Purchases] Firebase save confirmed (edit modal, direct):', { purchaseId: editingPurchase.id });
                       // Refresh purchases
                       const uid = resolvedUserId || user?.uid || null;
                       if (uid) {

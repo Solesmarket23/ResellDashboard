@@ -307,7 +307,10 @@ struct ToShipView: View {
   private func loadPending() async {
     guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
     var comps = URLComponents(url: baseURL.appendingPathComponent("api/stockx/orders/active"), resolvingAgainstBaseURL: false)!
-    comps.queryItems = [URLQueryItem(name: "orderStatus", value: "CREATED")]
+    comps.queryItems = [
+      URLQueryItem(name: "orderStatus", value: "CREATED"),
+      URLQueryItem(name: "includeCatalog", value: "1"), // Request product images from catalog
+    ]
     guard let url = comps.url else { return }
     var req = URLRequest(url: url)
     req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
@@ -335,7 +338,7 @@ struct ToShipView: View {
           payout: o.payout,
           orderDate: o.orderDate,
           shipByDate: shipBy,
-          imageUrl: o.imageUrl
+          imageUrl: o.resolvedImageUrl
         )
       }
       await MainActor.run { pendingOrders = orders }
@@ -447,7 +450,34 @@ private struct ActiveOrderRow: Decodable {
   let payout: Double?
   let orderDate: String?
   let shipment: ShipmentInfo?
-  let imageUrl: String?
+  /// Prefer imageUrl; fallback to image_url for API compatibility.
+  private let imageUrl: String?
+  private let image_url: String?
+
+  var resolvedImageUrl: String? {
+    (imageUrl ?? image_url).flatMap { s in s.isEmpty ? nil : s }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case orderNumber, productName, sku, size, status, salePrice, payout, orderDate, shipment
+    case imageUrl
+    case image_url
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    orderNumber = try c.decode(String.self, forKey: .orderNumber)
+    productName = try c.decodeIfPresent(String.self, forKey: .productName)
+    sku = try c.decodeIfPresent(String.self, forKey: .sku)
+    size = try c.decodeIfPresent(String.self, forKey: .size)
+    status = try c.decodeIfPresent(String.self, forKey: .status)
+    salePrice = try c.decodeIfPresent(Double.self, forKey: .salePrice)
+    payout = try c.decodeIfPresent(Double.self, forKey: .payout)
+    orderDate = try c.decodeIfPresent(String.self, forKey: .orderDate)
+    shipment = try c.decodeIfPresent(ShipmentInfo.self, forKey: .shipment)
+    imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
+    image_url = try c.decodeIfPresent(String.self, forKey: .image_url)
+  }
 }
 
 private struct ShipmentInfo: Decodable {

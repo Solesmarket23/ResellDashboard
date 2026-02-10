@@ -251,7 +251,8 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString()
     });
 
-    console.log(`✅ Updated purchase ${purchaseId}:`, normalizedUpdates);
+    const updateKeys = Object.keys(normalizedUpdates).join(', ');
+    console.log(`[Firebase] Purchase saved to Firestore: purchaseId=${purchaseId}, userId=${userId ?? '(none)'}, keys={${updateKeys}}`);
 
     return NextResponse.json({ 
       success: true,

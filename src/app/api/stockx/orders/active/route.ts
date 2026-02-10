@@ -34,6 +34,24 @@ function imageUrlFromCatalogProduct(product: any): string | null {
   return typeof url === 'string' && url.trim() ? url.trim() : null;
 }
 
+/** Extract image URL from an order (list or enriched) from all known StockX response shapes. */
+function imageUrlFromOrder(order: any): string | null {
+  if (!order || typeof order !== 'object') return null;
+  const url =
+    order?.product?.imageUrl ||
+    order?.product?.image_url ||
+    order?.product?.media?.imageUrl ||
+    order?.product?.media?.image_url ||
+    (Array.isArray(order?.product?.media) && order.product.media.find((m: any) => typeof m?.url === 'string')?.url) ||
+    order?.variant?.product?.media?.imageUrl ||
+    order?.variant?.product?.media?.image_url ||
+    order?.variant?.product?.imageUrl ||
+    order?.variant?.product?.image_url ||
+    order?.variant?.product?.image ||
+    (Array.isArray(order?.variant?.product?.media) && order.variant.product.media.find((m: any) => typeof m?.url === 'string')?.url);
+  return typeof url === 'string' && url.trim() ? url.trim() : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const upstreamCalls = {
@@ -426,7 +444,7 @@ export async function GET(request: NextRequest) {
           orderDate: order.createdAt,
           buyerLocation: order.shippingAddress?.city || 'Unknown',
           shippingMethod: order.shippingMethod || 'Standard',
-          imageUrl: order.variant?.product?.media?.imageUrl || order.product?.imageUrl,
+          imageUrl: imageUrlFromOrder(order),
           shipment: order.shipment,
           authenticationDetails: order.authenticationDetails,
           inventoryType: order.inventoryType,
