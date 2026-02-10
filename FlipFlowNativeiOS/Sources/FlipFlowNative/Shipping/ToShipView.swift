@@ -558,7 +558,8 @@ struct ToShipView: View {
     var comps = URLComponents(url: baseURL.appendingPathComponent("api/stockx/orders/active"), resolvingAgainstBaseURL: false)!
     comps.queryItems = [
       URLQueryItem(name: "orderStatus", value: "CREATED"),
-      URLQueryItem(name: "includeCatalog", value: "1"), // Request product images from catalog
+      URLQueryItem(name: "includeCatalog", value: "1"),
+      URLQueryItem(name: "includeDetails", value: "1"), // Product images + payout/shipment from order details
     ]
     guard let url = comps.url else { return }
     var req = URLRequest(url: url)
@@ -653,16 +654,17 @@ struct ToShipView: View {
     await MainActor.run { isLoadingMarked = true }
     defer { Task { @MainActor in isLoadingMarked = false } }
     do {
-      let (data, _) = try await URLSession.shared.data(for: req)
+      let (data, res) = try await URLSession.shared.data(for: req)
+      guard let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+        return
+      }
       let decoded = try JSONDecoder().decode(MarkedResponse.self, from: data)
       await MainActor.run {
         markedOrderNumbers = decoded.orderNumbers ?? []
         markedAt = decoded.markedAt ?? [:]
       }
     } catch {
-      await MainActor.run {
-        bannerMessage = "Could not load marked orders."
-      }
+      // Non-fatal: keep previous marked data and don't show banner so refresh doesn't block the main list.
     }
   }
 

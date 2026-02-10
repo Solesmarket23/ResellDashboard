@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { refreshStockXTokens, setStockXTokenCookies } from '@/lib/stockx/tokenRefresh';
 import { getAdminDb } from '@/lib/firebase/admin';
 import { resolveNativeAuthUserId } from '@/lib/nativeAuthResolver';
+import { COLLECTIONS } from '@/lib/firebase/collections';
 
 function getBearerToken(request: NextRequest): string | null {
   const raw = request.headers.get('authorization') || request.headers.get('Authorization') || '';
@@ -52,6 +53,14 @@ function shipmentForResponse(order: any): any {
     order?.shipByDate ?? order?.ship_by_date ?? (typeof (order as any)?.ShipByDate === 'string' ? (order as any).ShipByDate : null);
   if (fromOrder) return { ...(normalized || {}), shipByDate: fromOrder };
   return normalized || order?.shipment || null;
+}
+
+/** Normalize product name for exact match (trim, collapse spaces). */
+function normalizeProductName(name: string | null | undefined): string {
+  if (name == null || typeof name !== 'string') return '';
+  return name
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 
 /** Extract image URL from an order (list or enriched) from all known StockX response shapes. */
@@ -140,11 +149,13 @@ export async function GET(request: NextRequest) {
     let refreshToken: string | null = null;
 
     const bearer = getBearerToken(request);
+    let userId: string | null = null;
     if (bearer) {
       const uid = await resolveNativeAuthUserId(request);
       if (!uid) {
         return NextResponse.json({ error: 'Invalid or missing Bearer token' }, { status: 401 });
       }
+      userId = uid;
       const adminDb = getAdminDb();
       if (!adminDb) {
         return NextResponse.json({ error: 'Server error' }, { status: 500 });
@@ -391,8 +402,9 @@ export async function GET(request: NextRequest) {
           const payoutMissing = !(payout && payout.totalPayout !== null && payout.totalPayout !== undefined);
           const hasShipment = Boolean(o?.shipment?.trackingNumber || o?.shipment?.shipByDate);
           const hasAuth = Boolean(o?.authenticationDetails?.status);
-          // Fetch details if payout is missing OR shipment/auth fields are missing.
-          return payoutMissing || !hasShipment || !hasAuth;
+          const hasImage = Boolean(imageUrlFromOrder(o));
+          // Fetch details if payout/shipment/auth missing, or no product image (so we can backfill from details).
+          return payoutMissing || !hasShipment || !hasAuth || !hasImage;
         });
 
       const limit = 6;
@@ -412,11 +424,19 @@ export async function GET(request: NextRequest) {
         const details = orderNumber ? cache.get(orderNumber) : null;
         if (!details || typeof details !== 'object') return o;
 
+        const existingImage = imageUrlFromOrder(o);
+        const detailsImage = imageUrlFromOrder(details);
         const merged: any = {
           ...o,
           ...(details?.shipment ? { shipment: details.shipment } : {}),
           ...(details?.authenticationDetails ? { authenticationDetails: details.authenticationDetails } : {}),
           ...(details?.inventoryType ? { inventoryType: details.inventoryType } : {}),
+          // Backfill product image from order details when list/catalog didn't provide one
+          ...(detailsImage && !existingImage && details?.product
+            ? { product: { ...(o?.product || {}), ...details.product, imageUrl: detailsImage } }
+            : detailsImage && !existingImage && details?.variant?.product
+              ? { variant: { ...(o?.variant || {}), product: { ...(o?.variant?.product || {}), ...details.variant.product, imageUrl: detailsImage } } }
+              : {}),
         };
 
         // Backfill payout if missing
@@ -430,6 +450,36 @@ export async function GET(request: NextRequest) {
 
     const ordersWithBrandsAndDetails = await enrichPayoutDetails(ordersWithBrands, accessToken);
 
+    // Build productName -> imageUrl from user's purchases (exact match) for sales that lack images
+    const purchaseImageByProductName: Record<string, string> = {};
+    if (userId) {
+      const adminDb = getAdminDb();
+      if (adminDb) {
+        try {
+          const purchasesSnap = await adminDb
+            .collection(COLLECTIONS.PURCHASES)
+            .where('userId', '==', userId)
+            .get();
+          for (const doc of purchasesSnap.docs) {
+            const data = doc.data() as any;
+            const name =
+              data?.productName ?? data?.product?.productName ?? data?.product?.name ?? data?.name ?? '';
+            const normalized = normalizeProductName(name);
+            if (!normalized) continue;
+            const imgRaw =
+              data?.productImageUrl ?? data?.product?.imageUrl ?? data?.imageUrl ?? data?.image;
+            const img =
+              typeof imgRaw === 'string' && imgRaw.trim() ? imgRaw.trim() : '';
+            if (img && !purchaseImageByProductName[normalized]) {
+              purchaseImageByProductName[normalized] = img;
+            }
+          }
+        } catch {
+          // Non-fatal: continue without purchase images
+        }
+      }
+    }
+
     // Transform StockX API response to our format
     const transformedOrders =
       ordersWithBrandsAndDetails?.map((order: any) => {
@@ -442,17 +492,21 @@ export async function GET(request: NextRequest) {
         const fees: number | null =
           payout !== null ? Math.max(0, Math.round((salePrice - payout) * 100) / 100) : null;
         const pid = order?.product?.productId || order?.productId || order?.product?.id || null;
+        const orderProductName =
+          order.product?.productName ||
+          order.product?.name ||
+          order.variant?.product?.productName ||
+          order.variant?.product?.name ||
+          'Unknown Product';
+        const imageFromOrder = imageUrlFromOrder(order);
+        const imageFromPurchase = purchaseImageByProductName[normalizeProductName(orderProductName)];
+        const imageUrl = imageFromOrder || imageFromPurchase || null;
 
         return {
           id: order.id,
           orderNumber: order.orderNumber,
           productId: pid,
-          productName:
-            order.product?.productName ||
-            order.product?.name ||
-            order.variant?.product?.productName ||
-            order.variant?.product?.name ||
-            'Unknown Product',
+          productName: orderProductName,
           productBrand: order.product?.brand || order.variant?.product?.brand || 'Unknown Brand',
           category: order.product?.category || order.variant?.product?.category,
           size: order.variant?.variantValue || order.variant?.size || 'N/A',
@@ -464,7 +518,7 @@ export async function GET(request: NextRequest) {
           orderDate: order.createdAt,
           buyerLocation: order.shippingAddress?.city || 'Unknown',
           shippingMethod: order.shippingMethod || 'Standard',
-          imageUrl: imageUrlFromOrder(order),
+          imageUrl,
           shipment: shipmentForResponse(order),
           authenticationDetails: order.authenticationDetails,
           inventoryType: order.inventoryType,
