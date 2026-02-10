@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Enter order number (or paste shippingDocumentUrl), fetch shipping document list then PDF, print via Air Print.
-/// If input is a StockX shippingDocumentUrl we skip the list call and request the PDF directly.
+/// Enter order number (or paste shippingDocumentUrl), fetch shipping document list then PDF(s), print via Air Print.
+/// StockX can return multiple documents (shipping label + invoice/insert); we fetch and print each.
+/// If input is a StockX shippingDocumentUrl we skip the list call and request that PDF directly.
 struct PrintLabelView: View {
   @EnvironmentObject private var auth: AuthViewModel
   let userId: String
   @State private var orderNumber = ""
   @State private var isPrinting = false
+  @State private var useThermalLabel = false
   @State private var bannerMessage: String?
   @State private var alertMessage: String?
   @State private var showAlert = false
@@ -36,6 +38,14 @@ struct PrintLabelView: View {
               .autocorrectionDisabled()
           }
         }
+        .padding(.horizontal, 16)
+
+        Toggle(isOn: $useThermalLabel) {
+          Text("Thermal label")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(NeonTheme.textSecondary)
+        }
+        .tint(NeonTheme.accentCyan)
         .padding(.horizontal, 16)
 
         Button {
@@ -92,15 +102,15 @@ struct PrintLabelView: View {
     defer { Task { @MainActor in isPrinting = false } }
 
     let (order, shippingIdFromUrl) = parseOrderNumberOrShippingDocumentUrl(raw)
-    if let urlShippingId = shippingIdFromUrl {
+    if shippingIdFromUrl != nil {
       await MainActor.run { orderNumber = order }
     }
 
-    var shippingId: String
+    var documentIds: [String]
     if let fromUrl = shippingIdFromUrl {
-      shippingId = fromUrl
+      documentIds = [fromUrl]
     } else {
-      // 1) GET shipping-document list
+      // 1) GET shipping-document list (may return multiple: label + insert/invoice)
       var listURL = baseURL.appendingPathComponent("api/stockx/shipping-document")
       var comps = URLComponents(url: listURL, resolvingAgainstBaseURL: false)!
       comps.queryItems = [URLQueryItem(name: "orderNumber", value: order)]
@@ -138,65 +148,85 @@ struct PrintLabelView: View {
         }
         return
       }
-      // Backend may return top-level shippingId (fallback from order details when list returns 404)
-      let firstId = (listJson["shippingId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        ?? extractFirstShippingId(from: listJson)
-      guard let sid = firstId else {
+      // Use thermal vs normal (ink) based on toggle when backend provides both; else shippingDocumentIds
+      let thermalIds = listJson["thermalDocumentIds"] as? [String]
+      let normalIds = listJson["normalDocumentIds"] as? [String]
+      if useThermalLabel, let ids = thermalIds, !ids.isEmpty {
+        documentIds = ids
+      } else if !useThermalLabel, let ids = normalIds, !ids.isEmpty {
+        documentIds = ids
+      } else if let ids = listJson["shippingDocumentIds"] as? [String], !ids.isEmpty {
+        documentIds = ids
+      } else if let sid = (listJson["shippingId"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) ?? extractFirstShippingId(from: listJson) {
+        documentIds = [sid]
+      } else {
         await MainActor.run {
           alertMessage = "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
           showAlert = true
         }
         return
       }
-      shippingId = sid
     }
 
-    // 2) GET PDF
-    var pdfComps = URLComponents(url: baseURL.appendingPathComponent("api/stockx/shipping-document/pdf"), resolvingAgainstBaseURL: false)!
-    pdfComps.queryItems = [
-      URLQueryItem(name: "orderNumber", value: order),
-      URLQueryItem(name: "shippingId", value: shippingId),
-    ]
-    guard let pdfURL = pdfComps.url else {
-      await MainActor.run { bannerMessage = "Invalid PDF URL." }
-      return
-    }
-    var pdfReq = URLRequest(url: pdfURL)
-    pdfReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-    pdfReq.setValue("application/pdf", forHTTPHeaderField: "Accept")
-
-    let (pdfData, pdfResp): (Data, URLResponse)
-    do {
-      (pdfData, pdfResp) = try await URLSession.shared.data(for: pdfReq)
-    } catch {
-      await MainActor.run { bannerMessage = "Network error: \(error.localizedDescription)" }
-      return
-    }
-
-    let pdfStatus = (pdfResp as? HTTPURLResponse)?.statusCode ?? 0
-    let contentType = (pdfResp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
-    if pdfStatus != 200 || !contentType.contains("pdf") {
-      let decoded = try? JSONDecoder().decode(ShippingErrorResponse.self, from: pdfData)
-      let userMsg = decoded?.error ?? "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
-      await MainActor.run {
-        alertMessage = userMsg
-        showAlert = true
+    // 2) Fetch each PDF and print (label first, then insert if present)
+    let pdfBase = baseURL.appendingPathComponent("api/stockx/shipping-document/pdf")
+    let labels = documentIds.count == 1 ? ["Label"] : ["Label", "Insert"]
+    for (index, docId) in documentIds.enumerated() {
+      var pdfComps = URLComponents(url: pdfBase, resolvingAgainstBaseURL: false)!
+      pdfComps.queryItems = [
+        URLQueryItem(name: "orderNumber", value: order),
+        URLQueryItem(name: "shippingId", value: docId),
+      ]
+      guard let pdfURL = pdfComps.url else {
+        await MainActor.run { bannerMessage = "Invalid PDF URL." }
+        return
       }
-      return
-    }
+      var pdfReq = URLRequest(url: pdfURL)
+      pdfReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+      pdfReq.setValue("application/pdf", forHTTPHeaderField: "Accept")
 
-    await MainActor.run {
-      LabelPrinting.presentPrintSheet(
-        pdfData: pdfData,
-        jobName: "StockX \(order)"
-      ) { completed, error in
+      let (pdfData, pdfResp): (Data, URLResponse)
+      do {
+        (pdfData, pdfResp) = try await URLSession.shared.data(for: pdfReq)
+      } catch {
+        await MainActor.run { bannerMessage = "Network error: \(error.localizedDescription)" }
+        return
+      }
+
+      let pdfStatus = (pdfResp as? HTTPURLResponse)?.statusCode ?? 0
+      let contentType = (pdfResp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+      if pdfStatus != 200 || !contentType.contains("pdf") {
+        let decoded = try? JSONDecoder().decode(ShippingErrorResponse.self, from: pdfData)
+        let userMsg = decoded?.error ?? "No shipping label available for this order. Shipping labels are only available for Standard/Direct orders."
+        await MainActor.run {
+          alertMessage = userMsg
+          showAlert = true
+        }
+        return
+      }
+
+      let jobName = documentIds.count > 1
+        ? "StockX \(order) – \(labels[index])"
+        : "StockX \(order)"
+      let isLast = index == documentIds.count - 1
+      await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
         Task { @MainActor in
-          if let error {
-            bannerMessage = "Print failed: \(error.localizedDescription)"
-          } else if completed {
-            bannerMessage = "Sent to printer."
-          } else {
-            bannerMessage = "Print canceled."
+          LabelPrinting.presentPrintSheet(
+            pdfData: pdfData,
+            jobName: jobName
+          ) { completed, error in
+            Task { @MainActor in
+              if let error {
+                bannerMessage = "Print failed: \(error.localizedDescription)"
+              } else if completed {
+                bannerMessage = !isLast
+                  ? "Printed \(labels[index]). Next: \(labels[index + 1])."
+                  : "Sent to printer."
+              } else {
+                bannerMessage = "Print canceled."
+              }
+              cont.resume()
+            }
           }
         }
       }

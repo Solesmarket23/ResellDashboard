@@ -39,6 +39,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const log = (msg: string, data?: Record<string, unknown>) => {
+      console.log('[stockx/shipping-document/pdf]', msg, data ?? '');
+    };
+    log('request', { orderNumber, shippingId });
+
     const cookieStore = await cookies();
     let accessToken: string | null = null;
     let refreshToken: string | null = null;
@@ -106,9 +111,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    log('StockX PDF response', { status: res.status });
+
     if (!res.ok) {
       const text = await res.text();
       const is404 = res.status === 404;
+      log('StockX PDF failed', { status: res.status, bodyPreview: text.slice(0, 150) });
       let userMessage: string;
       if (is404) {
         userMessage =
@@ -151,6 +159,7 @@ export async function GET(request: NextRequest) {
 
     const blob = await res.blob();
     const buffer = Buffer.from(await blob.arrayBuffer());
+    log('returning PDF', { sizeBytes: buffer.length });
 
     const response = new NextResponse(buffer, {
       status: 200,
