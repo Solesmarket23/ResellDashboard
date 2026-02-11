@@ -29,7 +29,7 @@ struct AssignedSlotsView: View {
   private let baseURL = URL(string: "https://www.solesmarket.com")!
 
   private var availableBins: [String] {
-    let bins = Set(items.compactMap { item in
+    let bins: Set<String> = Set(items.compactMap { (item) -> String? in
       let loc = item.pickLocation.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
       guard let first = loc.first, first.isLetter else { return nil }
       return String(first)
