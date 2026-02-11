@@ -51,6 +51,12 @@ enum TrackingDetection {
     let normalized = normalize(trimmed)
     let upper = trimmed.uppercased()
 
+    // USPS composite labels often scan as a long all-digit string starting with "420" (routing + ZIP + tracking).
+    // If we see that shape, ignore it entirely so the scanner can keep looking for a FedEx/UPS barcode on the label.
+    if looksLikeUspsComposite(normalized) {
+      return []
+    }
+
     // 1) Whole string
     if let carrier = validateSupported(normalized) {
       if seen.insert(normalized).inserted { results.append((normalized, carrier)) }
@@ -110,6 +116,18 @@ enum TrackingDetection {
     return false
   }
 
+  /// USPS composite scans often include leading "420" and are 20+ digits.
+  /// We treat these as USPS so the tracking scanner can ignore them and keep searching for UPS/FedEx.
+  static func looksLikeUspsComposite(_ normalized: String) -> Bool {
+    let n = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !n.isEmpty else { return false }
+    guard n.allSatisfy({ $0.isNumber }) else { return false }
+    if n.hasPrefix("420"), n.count >= 20 { return true }
+    // Common USPS IMpb: 20–22 digits, usually starts with 9
+    if n.hasPrefix("9"), (20...22).contains(n.count) { return true }
+    return false
+  }
+
   /// True if the payload looks like a slot/SKU barcode: one letter A–H then digits (e.g. A1, B42, H123).
   static func looksLikeSlotSku(_ raw: String) -> Bool {
     let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -133,6 +151,8 @@ enum TrackingDetection {
     let tokens = regexMatches(in: upper, pattern: #"(?<!\d)[0-9]{10,30}(?!\d)"#)
     guard let best = tokens.max(by: { $0.count < $1.count }) else { return nil }
     let n = normalize(best)
+    // If it looks USPS-ish, don't return it as a "candidate" (we want the scanner to keep going).
+    if looksLikeUspsComposite(n) { return nil }
     if n.count >= 16 {
       let start = n.index(n.endIndex, offsetBy: -12)
       return String(n[start...])

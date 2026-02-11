@@ -242,6 +242,11 @@ final class ReceivingViewModel: ObservableObject {
     case .tracking:
       // Extract UPS/FedEx tracking numbers only; ignore anything else.
       guard let extracted = TrackingDetection.extractSupported(from: payload) else {
+        // If this scan is clearly USPS, ignore silently and keep scanning for a FedEx/UPS barcode.
+        // Many labels include a USPS barcode in addition to the real UPS/FedEx tracking.
+        if TrackingDetection.looksLikeUspsComposite(TrackingDetection.normalize(payload)) {
+          return
+        }
         if let candidate = TrackingDetection.extractTrackingLike(from: payload) {
           let normalized = TrackingDetection.normalize(candidate)
           let reason: String = {
@@ -255,6 +260,7 @@ final class ReceivingViewModel: ObservableObject {
           }()
           banner = "Scanned: \(shortPayload(payload))\nFound: \(normalized)\n\(reason)"
         } else {
+          // No candidate at all; show minimal feedback.
           banner = "Scanned: \(shortPayload(payload))\nNo UPS/FedEx tracking number found."
         }
         return
