@@ -5442,6 +5442,19 @@ const Purchases = () => {
                   <td className="px-6 py-3 align-middle text-center" style={{ width: `${columnWidths.authenticity}px` }}>
                     <div className="flex items-center justify-center">
                       {(() => {
+                        const extProvider = String(purchase?.authExternal?.provider || '').toLowerCase().trim();
+                        const extUrl = String(purchase?.authExternal?.url || '').trim();
+                        if (extUrl === 'SKIPPED_NO_QR' || extProvider.includes('no qr')) {
+                          const badge =
+                            currentTheme.name === 'Neon'
+                              ? 'bg-white/5 text-gray-200 border border-white/10'
+                              : 'bg-gray-50 text-gray-700 border border-gray-200';
+                          return (
+                            <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${badge}`}>
+                              No QR code
+                            </span>
+                          );
+                        }
                         const raw =
                           purchase?.authExternal?.status ??
                           purchase?.authSelf?.status ??

@@ -76,6 +76,11 @@ final class ReceivingViewModel: ObservableObject {
   @Published var externalUrl: String = ""
   @Published var externalStatus: AuthStatus = .unknown
 
+  /// Some items don't have an authenticity/verify QR. This allows a legit "skip" path
+  /// without stamping "(testing)" values or blocking saving.
+  @Published var verifyQrSkipped: Bool = false
+  @Published var verifyQrSkipReason: String = ""
+
   @Published var stockxUnitQrRaw: String = ""
 
   @Published var banner: String?
@@ -280,8 +285,8 @@ final class ReceivingViewModel: ObservableObject {
 
   var isStep1Complete: Bool { selected != nil && lookupState == .found }
   var isStep2Complete: Bool { !stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-  var isStep3Complete: Bool { !externalUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-  var isStep4Complete: Bool { externalStatus != .unknown }
+  var isStep3Complete: Bool { verifyQrSkipped || !externalUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  var isStep4Complete: Bool { verifyQrSkipped || externalStatus != .unknown }
 
   func onAuthSafariDismissed() {
     // After returning from the web verifier, move the user to marking the result.
@@ -293,6 +298,20 @@ final class ReceivingViewModel: ObservableObject {
     stockxUnitQrRaw = "(testing)"
     externalUrl = "https://testing"
     externalStatus = .pass
+    verifyQrSkipped = false
+    verifyQrSkipReason = ""
+    flowStep = .result
+  }
+
+  /// Legit skip: Some items have no verify QR available on the tag/packaging.
+  /// This should NOT mark the entry as "(testing)" and should still allow saving (when sync is enabled and trial mode is off).
+  func skipVerifyQrNoCode() {
+    verifyQrSkipped = true
+    verifyQrSkipReason = "No verify QR available"
+    externalProvider = "No QR code"
+    // Persist a clear marker so web/debugging can explain why external verification is missing.
+    externalUrl = "SKIPPED_NO_QR"
+    externalStatus = .unknown
     flowStep = .result
   }
 
@@ -311,6 +330,8 @@ final class ReceivingViewModel: ObservableObject {
     externalProvider = "Other"
     externalUrl = ""
     externalStatus = .unknown
+    verifyQrSkipped = false
+    verifyQrSkipReason = ""
     stockxUnitQrRaw = ""
 
     banner = nil
@@ -338,7 +359,8 @@ final class ReceivingViewModel: ObservableObject {
       banner = "Action required: Scan Verify QR (Step 3) next."
       return false
     }
-    if !isStep4Complete {
+    // If the user skipped verify QR (legit), do NOT auto-mark as pass.
+    if !isStep4Complete && !verifyQrSkipped {
       externalStatus = .pass
     }
 

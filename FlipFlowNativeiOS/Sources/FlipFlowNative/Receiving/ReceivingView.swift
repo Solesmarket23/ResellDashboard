@@ -670,7 +670,7 @@ private struct ReceivingScreen: View {
             vm.skipSteps2And3ForTesting()
             expanded.insert(.result)
           } label: {
-            Text("Skip verification")
+            Text("Testing: skip verification")
               .font(.caption.weight(.medium))
               .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
           }
@@ -740,15 +740,27 @@ private struct ReceivingScreen: View {
         .onTapGesture { vm.flowStep = .auth; expanded.insert(.auth) }
 
         if isExpanded {
-          Button {
-            vm.skipSteps2And3ForTesting()
-            expanded.insert(.result)
-          } label: {
-            Text("Skip verification")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
+          HStack(spacing: 12) {
+            Button {
+              vm.skipVerifyQrNoCode()
+              expanded.insert(.result)
+            } label: {
+              Text("No QR code (skip authenticity)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NeonTheme.accentEmerald.opacity(0.95))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+              vm.skipSteps2And3ForTesting()
+              expanded.insert(.result)
+            } label: {
+              Text("Testing: skip verification")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
+            }
+            .buttonStyle(.plain)
           }
-          .buttonStyle(.plain)
           .padding(.bottom, 4)
 
           if !vm.isStep1Complete {
@@ -814,7 +826,11 @@ private struct ReceivingScreen: View {
 
         if isExpanded {
           if !vm.isStep3Complete {
-            StepHint(text: "Complete the Verify QR scan first (Step 3) so you can confirm the result.")
+            StepHint(text: "Complete Step 3 (Verify QR), or use “No QR code (skip authenticity)” if there isn’t one.")
+          } else if vm.verifyQrSkipped {
+            Text("Verify QR skipped: \(vm.verifyQrSkipReason)")
+              .font(.caption2)
+              .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
           }
 
           VStack(spacing: 10) {
@@ -1033,7 +1049,11 @@ private struct ReceivingScreen: View {
               .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
           }
         } else {
-          if vm.externalStatus == .pass {
+          if vm.verifyQrSkipped {
+            Text("Verify QR: No QR code")
+              .font(.caption)
+              .foregroundStyle(NeonTheme.textSecondary)
+          } else if vm.externalStatus == .pass {
             Text("Marked: Authentic")
               .font(.caption)
               .foregroundStyle(NeonTheme.textSecondary)
@@ -1333,6 +1353,12 @@ private struct ProcessedLogRow: View {
 
   private var authLabel: String {
     let provider = (entry.authProvider ?? "Other").trimmingCharacters(in: .whitespacesAndNewlines)
+    let url = (entry.authUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Special-case: items without an authenticity/verify QR.
+    if url == "SKIPPED_NO_QR" || provider.lowercased().contains("no qr") {
+      return "No QR code"
+    }
     switch entry.authResult {
     case .pass: return "\(provider) • Authentic"
     case .fail: return "\(provider) • Not authentic"
