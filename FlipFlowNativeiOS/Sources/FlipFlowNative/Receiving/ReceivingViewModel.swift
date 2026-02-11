@@ -492,6 +492,7 @@ final class ReceivingViewModel: ObservableObject {
     }
 
     resetFlowForNextItem()
+    banner = "Marked as received."
     return true
   }
 

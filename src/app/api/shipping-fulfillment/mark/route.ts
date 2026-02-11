@@ -59,6 +59,22 @@ export async function POST(request: NextRequest) {
 
     await docRef.set({ orderNumbers, updatedAt: new Date().toISOString() }, { merge: true });
 
+    // Mark the purchase that was allocated to this order as "sold" (used to fulfill this sale).
+    const nowIso = new Date().toISOString();
+    const soldSnap = await db
+      .collection(COLLECTIONS.PURCHASES)
+      .where('userId', '==', userId)
+      .where('allocatedToOrderNumber', '==', orderNumber)
+      .limit(1)
+      .get();
+    if (!soldSnap.empty) {
+      await soldSnap.docs[0].ref.update({
+        soldAt: nowIso,
+        fulfilledOrderNumber: orderNumber,
+        updatedAt: nowIso,
+      });
+    }
+
     return NextResponse.json({
       success: true,
       orderNumber,

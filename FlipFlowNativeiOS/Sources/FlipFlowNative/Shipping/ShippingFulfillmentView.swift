@@ -111,8 +111,8 @@ private struct ShippingHostView: View {
         ShippingOptionCard(
           route: .assignedSlots,
           icon: "number.square.fill",
-          title: "Assigned slots",
-          subtitle: "View all slots (SKUs) you assigned — swipe to delete and reset"
+          title: "Assigned SKUs",
+          subtitle: "View all SKUs you assigned — tap for Print label, swipe to remove"
         )
       }
       .padding(.horizontal, 16)

@@ -53,10 +53,12 @@ struct ToShipView: View {
     let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     if !q.isEmpty {
       list = list.filter { order in
-        order.orderNumber.lowercased().contains(q)
+        let pickLoc = (pickLocation(for: order) ?? "").lowercased()
+        return order.orderNumber.lowercased().contains(q)
           || order.productName.lowercased().contains(q)
           || order.sku.lowercased().contains(q)
           || order.size.lowercased().contains(q)
+          || pickLoc.contains(q)
       }
     }
     if let size = filterSize, !size.isEmpty {
@@ -66,6 +68,12 @@ struct ToShipView: View {
       list = list.filter { $0.productName == name }
     }
     return list
+  }
+
+  private var hasActiveSearchOrFilter: Bool {
+    !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || filterSize != nil
+      || filterProductName != nil
   }
 
   private var uniqueSizes: [String] {
@@ -247,8 +255,12 @@ struct ToShipView: View {
             }
             if !pendingOrders.isEmpty {
               sectionHeader("Ready to ship", subtitle: "Tap an order to print its label")
-              ForEach(filteredPendingOrders) { order in
-                pendingOrderRow(order)
+              if filteredPendingOrders.isEmpty && hasActiveSearchOrFilter {
+                noResultsCard
+              } else {
+                ForEach(filteredPendingOrders) { order in
+                  pendingOrderRow(order)
+                }
               }
             }
 
@@ -341,11 +353,31 @@ struct ToShipView: View {
     return formatter.string(from: NSNumber(value: amount)) ?? String(format: "$%.2f", amount)
   }
 
+  private var noResultsCard: some View {
+    NeonCard {
+      VStack(spacing: 10) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 28))
+          .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+        Text("No results found")
+          .font(.headline.weight(.semibold))
+          .foregroundStyle(NeonTheme.textPrimary)
+        Text("Try a different SKU, order number, product name, or size. You can also clear the search or filters.")
+          .font(.caption)
+          .foregroundStyle(NeonTheme.textSecondary)
+          .multilineTextAlignment(.center)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 20)
+    }
+    .padding(.horizontal, 16)
+  }
+
   private var searchBar: some View {
     HStack(spacing: 8) {
       Image(systemName: "magnifyingglass")
         .foregroundStyle(NeonTheme.textSecondary)
-      TextField("Search order, product, SKU, size", text: $searchText)
+      TextField("Search by order, product, SKU, or size", text: $searchText)
         .textFieldStyle(.plain)
         .foregroundStyle(NeonTheme.textPrimary)
         .autocorrectionDisabled()
@@ -863,7 +895,7 @@ private struct VerifyOrderSheet: View {
         lines.append("  (none – assign slots in Receiving first)")
       } else {
         lines.append("")
-        lines.append("Note: allocate-for-order only uses items with received=yes. If you see a slot in Assigned slots but received=NO above, complete Receiving and mark that item received.")
+        lines.append("Note: allocate-for-order only uses items with received=yes. If you see a SKU in Assigned SKUs but received=NO above, complete Receiving and mark that item received.")
       }
       await MainActor.run {
         matchDebugText = lines.joined(separator: "\n")

@@ -48,6 +48,10 @@ export async function GET(request: NextRequest) {
       size: string | null;
       pickLocation: string;
       updatedAt: string | null;
+      productImageUrl: string | null;
+      styleId: string | null;
+      soldAt: string | null;
+      fulfilledOrderNumber: string | null;
     }> = [];
 
     for (const doc of snap.docs) {
@@ -67,6 +71,28 @@ export async function GET(request: NextRequest) {
         data?.product?.variantValue ??
         null;
       const size = sizeRaw != null && String(sizeRaw).trim() !== '' ? String(sizeRaw).trim() : null;
+      const productImageUrl =
+        typeof data?.productImageUrl === 'string'
+          ? data.productImageUrl
+          : typeof data?.product?.imageUrl === 'string'
+            ? data.product.imageUrl
+            : typeof data?.imageUrl === 'string'
+              ? data.imageUrl
+              : null;
+      const styleId =
+        typeof data?.styleId === 'string'
+          ? data.styleId
+          : typeof data?.style_id === 'string'
+            ? data.style_id
+            : typeof data?.product?.styleId === 'string'
+              ? data.product.styleId
+              : null;
+      const soldAt =
+        typeof data?.soldAt === 'string' && data.soldAt.trim() !== '' ? data.soldAt.trim() : null;
+      const fulfilledOrderNumber =
+        typeof data?.fulfilledOrderNumber === 'string' && data.fulfilledOrderNumber.trim() !== ''
+          ? data.fulfilledOrderNumber.trim()
+          : null;
       items.push({
         id: doc.id,
         orderNumber: data?.orderNumber ?? data?.order_number ?? null,
@@ -74,6 +100,10 @@ export async function GET(request: NextRequest) {
         size,
         pickLocation: loc,
         updatedAt: data?.updatedAt ?? null,
+        productImageUrl: productImageUrl?.trim() || null,
+        styleId: styleId?.trim() || null,
+        soldAt: soldAt ?? null,
+        fulfilledOrderNumber: fulfilledOrderNumber ?? null,
       });
     }
 
