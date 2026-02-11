@@ -87,6 +87,54 @@ final class ApiPurchaseRepository: PurchaseRepositoryProtocol {
     throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: "Assign SKU failed (missing sku)."])
   }
 
+  func updateTracking(
+    purchaseId: String,
+    userId: String,
+    trackingNumber: String,
+    carrier: String?
+  ) async throws {
+    let t = trackingNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !t.isEmpty else { return }
+    let now = ISO8601DateFormatter().string(from: Date())
+
+    var updates: [String: Any] = [
+      "tracking": t,
+      "trackingNumber": t,
+      "trackingSource": "scan",
+      "trackingUpdatedAt": now,
+      "trackingUpdatedBy": userId,
+      "updatedAt": now,
+    ]
+    if let carrier, !carrier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      updates["carrier"] = carrier
+    }
+
+    // Allow saving even if carrier APIs haven't indexed the tracking yet.
+    let req = try request(
+      path: "api/purchases/update",
+      method: "POST",
+      userId: userId,
+      body: [
+        "userId": userId,
+        "purchaseId": purchaseId,
+        "updates": updates,
+        "allowInvalidTracking": true,
+      ]
+    )
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    if status < 200 || status >= 300 {
+      let msg: String = {
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let err = obj["error"] as? String, !err.isEmpty {
+          return err
+        }
+        return "Update tracking failed (\(status))"
+      }()
+      throw NSError(domain: "FlipFlowNative.API", code: status, userInfo: [NSLocalizedDescriptionKey: msg])
+    }
+  }
+
   func markReceived(
     purchaseId: String,
     userId: String,

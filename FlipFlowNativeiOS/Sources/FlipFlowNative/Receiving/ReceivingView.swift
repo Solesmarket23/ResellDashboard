@@ -1033,9 +1033,15 @@ private struct ReceivingScreen: View {
 
           Button {
             Task {
+              // Immediate tap feedback
+              UIImpactFeedbackGenerator(style: .light).impactOccurred()
               let didReset = await vm.completeCurrentItemAndStartNext()
               if didReset {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 expanded = [.tracking]
+              } else {
+                // If the flow didn't complete (missing step / sync failure), give a subtle error haptic.
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
               }
             }
           } label: {

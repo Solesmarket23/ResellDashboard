@@ -392,6 +392,17 @@ final class ReceivingViewModel: ObservableObject {
       externalStatus = .pass
     }
 
+    // Prevent "it looked like it worked" when nothing will persist.
+    // Users expect Finish to save to the web dashboard.
+    if trialModeEnabled {
+      banner = "Trial mode is ON. Turn it off in the menu to save to solesmarket.com."
+      return false
+    }
+    if !syncEnabled {
+      banner = "Web sync is OFF. Enable it in the menu to save to solesmarket.com."
+      return false
+    }
+
     let entry = ProcessedLogEntry(
       processedAt: Date(),
       purchase: selected,
@@ -402,36 +413,49 @@ final class ReceivingViewModel: ObservableObject {
     )
     appendProcessedLog(entry)
 
-    if syncEnabled {
-      guard let userId = userIdProvider() else {
-        banner = "Not signed in. Can't sync."
-        return false
+    guard let userId = userIdProvider() else {
+      banner = "Not signed in. Can't sync."
+      return false
+    }
+    do {
+      // 0) Tracking source-of-truth:
+      // If the scanned tracking differs from what the web parser saved, overwrite it.
+      let scanned = normalizeTracking(trackingInput)
+      let existing = normalizeTracking(selected.trackingNumber ?? "")
+      if !scanned.isEmpty, scanned != existing {
+        let carrier: String? = {
+          switch TrackingDetection.validateSupported(scanned) {
+          case .ups?: return "UPS"
+          case .fedex?: return "FedEx"
+          case nil: return nil
+          }
+        }()
+        try await repo.updateTracking(purchaseId: selected.id, userId: userId, trackingNumber: scanned, carrier: carrier)
       }
-      do {
-        // 1) Save verification fields
-        try await repo.saveVerification(
-          purchaseId: selected.id,
-          userId: userId,
-          authSelfStatus: authSelfStatus,
-          authSelfNotes: authSelfNotes.trimmingCharacters(in: .whitespacesAndNewlines),
-          externalProvider: externalProvider,
-          externalUrl: externalUrl,
-          externalStatus: externalStatus,
-          stockxUnitQrRaw: stockxUnitQrRaw
-        )
 
-        // 2) Mark received (NOT delivered) after all steps are complete
-        try await repo.markReceived(
-          purchaseId: selected.id,
-          userId: userId,
-          receivedMethod: trackingEntryMethod,
-          receivedNotes: nil,
-          alsoMarkDelivered: false
-        )
-      } catch {
-        banner = "Sync failed: \((error as NSError).localizedDescription)"
-        return false
-      }
+      // 1) Save verification fields
+      try await repo.saveVerification(
+        purchaseId: selected.id,
+        userId: userId,
+        authSelfStatus: authSelfStatus,
+        authSelfNotes: authSelfNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+        externalProvider: externalProvider,
+        externalUrl: externalUrl,
+        externalStatus: externalStatus,
+        stockxUnitQrRaw: stockxUnitQrRaw
+      )
+
+      // 2) Mark received (NOT delivered) after all steps are complete
+      try await repo.markReceived(
+        purchaseId: selected.id,
+        userId: userId,
+        receivedMethod: trackingEntryMethod,
+        receivedNotes: nil,
+        alsoMarkDelivered: false
+      )
+    } catch {
+      banner = "Sync failed: \((error as NSError).localizedDescription)"
+      return false
     }
 
     resetFlowForNextItem()

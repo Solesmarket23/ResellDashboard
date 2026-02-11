@@ -8,6 +8,17 @@ function pickBestStatus(existing: any, incoming: any): string {
   return getStatusPriority(incomingStatus) >= getStatusPriority(existingStatus) ? incomingStatus : existingStatus;
 }
 
+function pickTracking(data: any): string {
+  return String(
+    data?.tracking ??
+      data?.trackingNumber ??
+      data?.tracking_number ??
+      data?.shipment?.tracking ??
+      data?.shipment?.trackingNumber ??
+      ''
+  ).trim();
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { userId, purchases, reset } = await request.json();
@@ -102,6 +113,49 @@ export async function POST(request: NextRequest) {
       if (incomingOrderNumber && existingByOrderNumber.has(incomingOrderNumber) && reset !== true) {
         const existing = existingByOrderNumber.get(incomingOrderNumber)!;
         const bestStatus = pickBestStatus(existing.data, purchaseData);
+
+        // Tracking source-of-truth:
+        // If the user scanned tracking in the iOS app, preserve it and do not let Gmail parsing overwrite it.
+        const existingTracking = pickTracking(existing.data);
+        const existingTrackingSource = String(existing.data?.trackingSource || existing.data?.tracking_source || '').toLowerCase().trim();
+        const incomingTracking = pickTracking(purchaseData);
+
+        const stripEmptyTrackingFields = (obj: any) => {
+          const keys = ['tracking', 'trackingNumber', 'tracking_number', 'shipment.tracking', 'shipment.trackingNumber'];
+          for (const k of keys) {
+            if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+            const v = obj[k];
+            if (typeof v === 'string' && v.trim() === '') delete obj[k];
+            if (v === null) delete obj[k];
+          }
+        };
+
+        // Never overwrite an existing non-empty tracking number with empty.
+        stripEmptyTrackingFields(purchaseData);
+
+        if (existingTrackingSource === 'scan' && existingTracking) {
+          // If incoming tracking differs, keep scanned tracking.
+          if (incomingTracking && incomingTracking !== existingTracking) {
+            console.warn('⚠️ Preserving scanned tracking over Gmail parsing', {
+              orderNumber: incomingOrderNumber,
+              existingTracking,
+              incomingTracking,
+            });
+          }
+          purchaseData.tracking = existingTracking;
+          purchaseData.trackingNumber = existingTracking;
+          purchaseData.trackingSource = 'scan';
+          // Prefer existing carrier when present.
+          if (existing.data?.carrier && !purchaseData.carrier) purchaseData.carrier = existing.data.carrier;
+        } else {
+          // If Gmail didn't provide tracking but we already have one, keep it.
+          if (!incomingTracking && existingTracking) {
+            purchaseData.tracking = existingTracking;
+            purchaseData.trackingNumber = existingTracking;
+            if (existing.data?.carrier && !purchaseData.carrier) purchaseData.carrier = existing.data.carrier;
+          }
+        }
+
         await adminDb.collection('purchases').doc(existing.id).set(
           {
             ...purchaseData,

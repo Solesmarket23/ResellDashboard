@@ -4,6 +4,12 @@ import FirebaseFirestore
 protocol PurchaseRepositoryProtocol {
   func findPurchasesByTracking(trackingNumber: String, userId: String) async throws -> [PurchaseMatch]
   func assignSku(purchaseId: String, userId: String) async throws -> String
+  func updateTracking(
+    purchaseId: String,
+    userId: String,
+    trackingNumber: String,
+    carrier: String?
+  ) async throws
   func markReceived(
     purchaseId: String,
     userId: String,
@@ -108,6 +114,30 @@ final class FirestorePurchaseRepository: PurchaseRepositoryProtocol {
 
     if let sku = result as? String { return sku }
     throw NSError(domain: "FlipFlowNative.SKU", code: 0, userInfo: [NSLocalizedDescriptionKey: "Assign SKU failed."])
+  }
+
+  func updateTracking(
+    purchaseId: String,
+    userId: String,
+    trackingNumber: String,
+    carrier: String?
+  ) async throws {
+    let now = isoNow()
+    let t = trackingNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !t.isEmpty else { return }
+
+    var updates: [String: Any] = [
+      "tracking": t,
+      "trackingNumber": t,
+      "trackingSource": "scan",
+      "trackingUpdatedAt": now,
+      "trackingUpdatedBy": userId,
+      "updatedAt": now,
+    ]
+    if let carrier, !carrier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      updates["carrier"] = carrier
+    }
+    try await db.collection("purchases").document(purchaseId).updateData(updates)
   }
 
   private func isoNow() -> String {
