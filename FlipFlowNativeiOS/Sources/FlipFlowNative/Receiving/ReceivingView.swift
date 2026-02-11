@@ -666,17 +666,6 @@ private struct ReceivingScreen: View {
           }
           .buttonStyle(NeonPrimaryButtonStyle())
 
-          Button {
-            vm.skipSteps2And3ForTesting()
-            expanded.insert(.result)
-          } label: {
-            Text("Testing: skip verification")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
-          }
-          .buttonStyle(.plain)
-          .padding(.top, 2)
-
           if !vm.stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             HStack(alignment: .top, spacing: 8) {
               Text("Captured: \(vm.stockxUnitQrRaw)")
@@ -740,29 +729,6 @@ private struct ReceivingScreen: View {
         .onTapGesture { vm.flowStep = .auth; expanded.insert(.auth) }
 
         if isExpanded {
-          HStack(spacing: 12) {
-            Button {
-              vm.skipVerifyQrNoCode()
-              expanded.insert(.result)
-            } label: {
-              Text("No QR code (skip authenticity)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(NeonTheme.accentEmerald.opacity(0.95))
-            }
-            .buttonStyle(.plain)
-
-            Button {
-              vm.skipSteps2And3ForTesting()
-              expanded.insert(.result)
-            } label: {
-              Text("Testing: skip verification")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
-            }
-            .buttonStyle(.plain)
-          }
-          .padding(.bottom, 4)
-
           if !vm.isStep1Complete {
             StepHint(text: "You can scan now, but it’s best to identify the item first (Step 1).")
           }
@@ -779,6 +745,35 @@ private struct ReceivingScreen: View {
             .foregroundStyle(.white)
           }
           .buttonStyle(NeonPrimaryButtonStyle())
+
+          // Medium prominence: some items legitimately don't have a verify QR (esp. shoes).
+          Button {
+            if vm.verifyQrSkipped {
+              vm.undoVerifyQrSkip()
+            } else {
+              vm.skipVerifyQrNoCode()
+              expanded.insert(.result)
+            }
+          } label: {
+            HStack {
+              Image(systemName: vm.verifyQrSkipped ? "arrow.uturn.backward.circle" : "qrcode")
+              Text(vm.verifyQrSkipped ? "Undo: No QR code on item" : "No QR code on item")
+                .fontWeight(.semibold)
+              Spacer()
+            }
+            .foregroundStyle(.white)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            // Secondary styling: avoid looking like the primary action (and avoid looking "selected").
+            // Use a neutral surface with a cyan outline to match the rest of the UI.
+            .background(Color.white.opacity(vm.verifyQrSkipped ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+              RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(NeonTheme.accentCyan.opacity(vm.verifyQrSkipped ? 0.85 : 0.55), lineWidth: 1)
+            )
+          }
+          .buttonStyle(.plain)
+          .padding(.top, 2)
 
           if !vm.externalProvider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Text("Provider: \(vm.externalProvider)")
@@ -826,61 +821,72 @@ private struct ReceivingScreen: View {
 
         if isExpanded {
           if !vm.isStep3Complete {
-            StepHint(text: "Complete Step 3 (Verify QR), or use “No QR code (skip authenticity)” if there isn’t one.")
+            StepHint(text: "Complete Step 3 (Verify QR), or use “No QR code on item” if there isn’t one.")
           } else if vm.verifyQrSkipped {
             Text("Verify QR skipped: \(vm.verifyQrSkipReason)")
               .font(.caption2)
               .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
           }
 
-          VStack(spacing: 10) {
-            Button {
-              vm.externalStatus = .pass
-              vm.flowStep = .result
-            } label: {
-              HStack {
-                Image(systemName: vm.externalStatus == .pass ? "checkmark.circle.fill" : "checkmark.circle")
-                Text("Authentic")
-                  .fontWeight(.semibold)
-                Spacer()
+          if vm.isStep3Complete && !vm.verifyQrSkipped {
+            VStack(spacing: 10) {
+              Button {
+                // Toggle selection: tapping again clears to "not marked"
+                vm.externalStatus = (vm.externalStatus == .pass) ? .unknown : .pass
+                vm.flowStep = .result
+              } label: {
+                HStack {
+                  Image(systemName: vm.externalStatus == .pass ? "checkmark.circle.fill" : "checkmark.circle")
+                  Text("Authentic")
+                    .fontWeight(.semibold)
+                  Spacer()
+                }
+                .foregroundStyle(.white)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .background(
+                  (vm.externalStatus == .pass ? NeonTheme.accentEmerald.opacity(0.55) : Color.white.opacity(0.06)),
+                  in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .overlay(
+                  RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(vm.externalStatus == .pass ? NeonTheme.accentEmerald.opacity(0.9) : NeonTheme.border, lineWidth: 1)
+                )
               }
-              .foregroundStyle(.white)
-              .padding(.vertical, 12)
-              .padding(.horizontal, 14)
-              .background(
-                (vm.externalStatus == .pass ? NeonTheme.accentEmerald.opacity(0.55) : Color.white.opacity(0.06)),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-              )
-              .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                  .stroke(vm.externalStatus == .pass ? NeonTheme.accentEmerald.opacity(0.9) : NeonTheme.border, lineWidth: 1)
-              )
-            }
-            .buttonStyle(.plain)
+              .buttonStyle(.plain)
 
-            Button {
-              vm.externalStatus = .fail
-              vm.flowStep = .result
-            } label: {
-              HStack {
-                Image(systemName: vm.externalStatus == .fail ? "xmark.octagon.fill" : "xmark.octagon")
-                Text("Not authentic")
-                  .fontWeight(.semibold)
-                Spacer()
+              Button {
+                // Toggle selection: tapping again clears to "not marked"
+                vm.externalStatus = (vm.externalStatus == .fail) ? .unknown : .fail
+                vm.flowStep = .result
+              } label: {
+                HStack {
+                  Image(systemName: vm.externalStatus == .fail ? "xmark.octagon.fill" : "xmark.octagon")
+                  Text("Not authentic")
+                    .fontWeight(.semibold)
+                  Spacer()
+                }
+                .foregroundStyle(.white)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+                .background(
+                  (vm.externalStatus == .fail ? Color.red.opacity(0.45) : Color.white.opacity(0.06)),
+                  in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .overlay(
+                  RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(vm.externalStatus == .fail ? Color.red.opacity(0.9) : NeonTheme.border, lineWidth: 1)
+                )
               }
-              .foregroundStyle(.white)
-              .padding(.vertical, 12)
-              .padding(.horizontal, 14)
-              .background(
-                (vm.externalStatus == .fail ? Color.red.opacity(0.45) : Color.white.opacity(0.06)),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-              )
-              .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                  .stroke(vm.externalStatus == .fail ? Color.red.opacity(0.9) : NeonTheme.border, lineWidth: 1)
-              )
+              .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+          } else if vm.verifyQrSkipped {
+            // Keep the UI calm: if there's no verify QR on the item, don't ask the user to mark authentic/not-authentic.
+            Text("Authenticity: No QR code")
+              .font(.caption)
+              .foregroundStyle(NeonTheme.textSecondary)
+              .transition(.opacity)
           }
 
           // Slot first (assign or choose), then Print SKU label, so top-to-bottom flow uses slot format.
@@ -1765,7 +1771,18 @@ private struct AssignBinSheet: View {
   @EnvironmentObject private var auth: AuthViewModel
 
   private let bins = ["A", "B", "C", "D", "E", "F", "G", "H"]
-  private let slotsPerBin = 5
+  private let maxSlotNumber = 999
+
+  @State private var selectedBin: String = "A"
+  @State private var selectedNumber: Double = 1
+  @State private var lastHapticNumber: Int = -1
+
+  private var selectedSlot: String {
+    let bin = bins.contains(selectedBin) ? selectedBin : "A"
+    let n = Int(selectedNumber.rounded())
+    let clamped = max(1, min(maxSlotNumber, n))
+    return "\(bin)\(clamped)"
+  }
 
   var body: some View {
     NavigationStack {
@@ -1784,31 +1801,96 @@ private struct AssignBinSheet: View {
             .font(.caption)
             .foregroundStyle(NeonTheme.textSecondary)
             .padding(.horizontal)
-          TextField("e.g. A1 or B28", text: $location)
-            .textFieldStyle(.plain)
-            .neonTextFieldStyle()
-            .padding(.horizontal, 16)
-          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
-            ForEach(bins, id: \.self) { bin in
-              ForEach(1 ... slotsPerBin, id: \.self) { num in
-                let slot = "\(bin)\(num)"
-                Button {
-                  location = slot
-                } label: {
-                  Text(slot)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(location == slot ? .black : NeonTheme.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                      location == slot ? NeonTheme.accentCyan : Color.white.opacity(0.08),
-                      in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    )
+          
+          // Selected slot preview
+          HStack {
+            Text("Selected")
+              .font(.caption)
+              .foregroundStyle(NeonTheme.textSecondary)
+            Spacer()
+            Text(selectedSlot)
+              .font(.system(.title2, design: .monospaced).weight(.bold))
+              .foregroundStyle(.white)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 6)
+              .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+          }
+          .padding(.horizontal, 16)
+
+          // Bin selector (A–H)
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Bin")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(NeonTheme.textSecondary)
+              .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+              HStack(spacing: 10) {
+                ForEach(bins, id: \.self) { bin in
+                  Button {
+                    selectedBin = bin
+                    UISelectionFeedbackGenerator().selectionChanged()
+                  } label: {
+                    Text(bin)
+                      .font(.subheadline.weight(.semibold))
+                      .foregroundStyle(selectedBin == bin ? .black : .white)
+                      .frame(width: 44, height: 36)
+                      .background(
+                        selectedBin == bin ? NeonTheme.accentCyan : Color.white.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                      )
+                  }
+                  .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
               }
+              .padding(.horizontal, 16)
             }
           }
+
+          // Slot number selector (horizontal slider)
+          VStack(alignment: .leading, spacing: 10) {
+            HStack {
+              Text("Slot number")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NeonTheme.textSecondary)
+              Spacer()
+              Text("\(Int(selectedNumber.rounded()))")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(NeonTheme.accentCyan)
+            }
+            .padding(.horizontal, 16)
+
+            Slider(value: $selectedNumber, in: 1...Double(maxSlotNumber), step: 1)
+              .tint(NeonTheme.accentCyan)
+              .padding(.horizontal, 16)
+              .onChange(of: selectedNumber) { _ in
+                let n = Int(selectedNumber.rounded())
+                if n != lastHapticNumber {
+                  lastHapticNumber = n
+                  UISelectionFeedbackGenerator().selectionChanged()
+                }
+              }
+          }
+
+          Button {
+            location = selectedSlot
+            onSave()
+          } label: {
+            HStack {
+              Image(systemName: "checkmark.circle.fill")
+              if isSaving {
+                ProgressView().tint(.white)
+                Text("Saving…")
+                  .fontWeight(.semibold)
+              } else {
+                Text("Confirm slot")
+                  .fontWeight(.semibold)
+              }
+              Spacer()
+            }
+            .foregroundStyle(.white)
+          }
+          .buttonStyle(NeonPrimaryButtonStyle())
+          .disabled(isSaving)
           .padding(.horizontal, 16)
           if let msg = banner {
             Text(msg)
@@ -1824,7 +1906,11 @@ private struct AssignBinSheet: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbarBackground(.hidden, for: .navigationBar)
       .onAppear {
-        Task { await suggestNextSlot() }
+        syncSelectionFromLocation()
+        Task {
+          await suggestNextSlot()
+          syncSelectionFromLocation()
+        }
       }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -1833,13 +1919,25 @@ private struct AssignBinSheet: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
+            location = selectedSlot
             onSave()
           }
           .foregroundStyle(NeonTheme.accentCyan)
-          .disabled(location.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+          .disabled(isSaving)
         }
       }
     }
+  }
+
+  private func syncSelectionFromLocation() {
+    let t = location.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    guard t.count >= 2 else { return }
+    let bin = String(t.prefix(1))
+    let numStr = String(t.dropFirst())
+    guard bins.contains(bin), let n = Int(numStr), n >= 1, n <= maxSlotNumber else { return }
+    selectedBin = bin
+    selectedNumber = Double(n)
+    lastHapticNumber = n
   }
 
   private func suggestNextSlot() async {

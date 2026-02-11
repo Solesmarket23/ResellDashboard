@@ -81,6 +81,10 @@ final class ReceivingViewModel: ObservableObject {
   @Published var verifyQrSkipped: Bool = false
   @Published var verifyQrSkipReason: String = ""
 
+  private var previousExternalProvider: String?
+  private var previousExternalUrl: String?
+  private var previousExternalStatus: AuthStatus?
+
   @Published var stockxUnitQrRaw: String = ""
 
   @Published var banner: String?
@@ -312,6 +316,11 @@ final class ReceivingViewModel: ObservableObject {
   /// Legit skip: Some items have no verify QR available on the tag/packaging.
   /// This should NOT mark the entry as "(testing)" and should still allow saving (when sync is enabled and trial mode is off).
   func skipVerifyQrNoCode() {
+    if !verifyQrSkipped {
+      previousExternalProvider = externalProvider
+      previousExternalUrl = externalUrl
+      previousExternalStatus = externalStatus
+    }
     verifyQrSkipped = true
     verifyQrSkipReason = "No verify QR available"
     externalProvider = "No QR code"
@@ -319,6 +328,19 @@ final class ReceivingViewModel: ObservableObject {
     externalUrl = "SKIPPED_NO_QR"
     externalStatus = .unknown
     flowStep = .result
+  }
+
+  func undoVerifyQrSkip() {
+    verifyQrSkipped = false
+    verifyQrSkipReason = ""
+
+    externalProvider = previousExternalProvider ?? "Other"
+    externalUrl = previousExternalUrl ?? ""
+    externalStatus = previousExternalStatus ?? .unknown
+
+    previousExternalProvider = nil
+    previousExternalUrl = nil
+    previousExternalStatus = nil
   }
 
   func resetFlowForNextItem() {
