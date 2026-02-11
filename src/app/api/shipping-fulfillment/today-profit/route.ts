@@ -20,8 +20,26 @@ function getUserId(request: NextRequest): string | null {
 }
 
 /**
- * GET /api/shipping-fulfillment/marked
- * Returns order numbers the user has marked as shipped (local state only).
+ * Start of today in UTC (00:00:00.000).
+ */
+function startOfTodayUTC(): number {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * End of today in UTC (23:59:59.999).
+ */
+function endOfTodayUTC(): number {
+  const d = new Date();
+  d.setUTCHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+/**
+ * GET /api/shipping-fulfillment/today-profit
+ * Returns the sum of (payout - purchase cost) for all orders marked as shipped today.
  * Auth: Bearer (native) or userId cookie/query/header.
  */
 export async function GET(request: NextRequest) {
@@ -49,20 +67,42 @@ export async function GET(request: NextRequest) {
       orderNumbers?: Record<string, number>;
       orderDetails?: Record<string, { markedAt: number; payout?: number; cost?: number; profit?: number }>;
     } | null;
+
     const orderDetails = data?.orderDetails ?? null;
     const orderNumbers = data?.orderNumbers ?? {};
-    const list = orderDetails ? Object.keys(orderDetails) : Object.keys(orderNumbers);
-    const markedAt: Record<string, number> = orderDetails
-      ? Object.fromEntries(list.map((o) => [o, orderDetails[o]!.markedAt]))
-      : { ...orderNumbers };
+    const todayStart = startOfTodayUTC();
+    const todayEnd = endOfTodayUTC();
+
+    let todayProfit = 0;
+    let count = 0;
+
+    if (orderDetails) {
+      for (const orderNumber of Object.keys(orderDetails)) {
+        const detail = orderDetails[orderNumber];
+        if (!detail || typeof detail.markedAt !== 'number') continue;
+        if (detail.markedAt < todayStart || detail.markedAt > todayEnd) continue;
+        count += 1;
+        if (typeof detail.profit === 'number' && Number.isFinite(detail.profit)) {
+          todayProfit += detail.profit;
+        }
+      }
+    } else {
+      for (const [orderNumber, markedAt] of Object.entries(orderNumbers)) {
+        if (typeof markedAt !== 'number') continue;
+        if (markedAt < todayStart || markedAt > todayEnd) continue;
+        count += 1;
+        // No stored profit for legacy entries
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      orderNumbers: list,
-      markedAt,
+      todayProfit: Math.round(todayProfit * 100) / 100,
+      count,
+      currency: 'USD',
     });
   } catch (e) {
-    console.error('[shipping-fulfillment/marked]', e);
+    console.error('[shipping-fulfillment/today-profit]', e);
     return NextResponse.json(
       { success: false, error: e instanceof Error ? e.message : 'Server error' },
       { status: 500 }

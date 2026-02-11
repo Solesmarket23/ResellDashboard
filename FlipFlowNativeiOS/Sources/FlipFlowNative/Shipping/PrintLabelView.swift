@@ -10,7 +10,7 @@ struct PrintLabelView: View {
   var initialOrderNumber: String? = nil
   @State private var orderNumber = ""
   @State private var isPrinting = false
-  @State private var useThermalLabel = false
+  @State private var useThermalLabel = true
   enum RotateOption: String, CaseIterable {
     case none = "None"
     case clockwise = "90° clockwise"

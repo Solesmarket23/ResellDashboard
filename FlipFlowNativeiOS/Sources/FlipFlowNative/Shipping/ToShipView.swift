@@ -37,6 +37,9 @@ struct ToShipView: View {
   @State private var filterProductName: String? = nil
   /// When set and recent, we show cached data and refresh in background instead of blocking.
   @State private var lastReadyToShipFetchTime: Date?
+  /// Profit (payout - cost) for orders marked as shipped today.
+  @State private var todayProfit: Double?
+  @State private var isMarkingOrderNumber: String?
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
   /// Cache considered fresh for this many seconds; within that, open screen shows cache and refreshes in background. Sales don't change often during a shipping session.
@@ -173,6 +176,7 @@ struct ToShipView: View {
           await loadLocations()
           await loadPending()
           await loadMarked()
+          await loadTodayProfit()
           await MainActor.run { lastReadyToShipFetchTime = Date() }
         }
         return
@@ -180,6 +184,7 @@ struct ToShipView: View {
       await loadLocations()
       await loadPending()
       await loadMarked()
+      await loadTodayProfit()
       lastReadyToShipFetchTime = Date()
     }
     .fullScreenCover(item: $orderForVerify) { order in
@@ -320,6 +325,7 @@ struct ToShipView: View {
           await loadLocations()
           await loadPending()
           await loadMarked()
+          await loadTodayProfit()
           lastReadyToShipFetchTime = Date()
         }
       }
@@ -338,9 +344,15 @@ struct ToShipView: View {
         summaryCard(title: "Ship today", value: "\(shipTodayCount())", icon: "calendar", subtitle: "EST")
         summaryCard(title: "Ship tomorrow", value: "\(shipTomorrowCount())", icon: "calendar.badge.clock", subtitle: "EST")
         summaryCard(title: "Expected payout", value: formatPayout(totalExpectedPayout), icon: "dollarsign.circle")
+        summaryCard(title: "Today's profit", value: formatTodayProfit(todayProfit), icon: "banknote", subtitle: "shipped today")
       }
       .padding(.horizontal, 16)
     }
+  }
+
+  private func formatTodayProfit(_ value: Double?) -> String {
+    guard let v = value else { return "—" }
+    return formatPayout(v)
   }
 
   private func formatPayout(_ amount: Double) -> String {
@@ -526,15 +538,19 @@ struct ToShipView: View {
           .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
           VStack(alignment: .leading, spacing: 4) {
-            Text(order.orderNumber)
+            Text("Sale order: \(order.orderNumber)")
               .font(.system(.subheadline, design: .monospaced).weight(.semibold))
               .foregroundStyle(NeonTheme.textPrimary)
+
             Text(order.productName)
               .font(.subheadline)
               .foregroundStyle(NeonTheme.textSecondary)
               .lineLimit(2)
+              .multilineTextAlignment(.leading)
+              .fixedSize(horizontal: false, vertical: true)
+
             HStack(spacing: 8) {
-              Text(order.sku)
+              Text("Style: \(order.sku)")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(NeonTheme.accentCyan)
               Text("•")
@@ -543,6 +559,27 @@ struct ToShipView: View {
                 .font(.caption)
                 .foregroundStyle(NeonTheme.textSecondary)
             }
+
+            if order.salePrice != nil || order.payout != nil {
+              HStack(spacing: 6) {
+                if let sale = order.salePrice, sale > 0 {
+                  Text("Sale \(formatPayout(sale))")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(NeonTheme.textSecondary)
+                }
+                if order.salePrice != nil && order.payout != nil {
+                  Text("•")
+                    .font(.caption2)
+                    .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+                }
+                if let pay = order.payout, pay > 0 {
+                  Text("Payout \(formatPayout(pay))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NeonTheme.accentEmerald)
+                }
+              }
+            }
+
             if let loc = pickLocation(for: order), !loc.isEmpty {
               Label("Pick from \(loc)", systemImage: "location.fill")
                 .font(.caption.weight(.medium))
@@ -556,23 +593,93 @@ struct ToShipView: View {
           }
           .frame(maxWidth: .infinity, alignment: .leading)
 
-          VStack(spacing: 6) {
-            Button("Verify") {
+          VStack(spacing: 8) {
+            Button {
               orderForVerify = order
               Task { await ensureAllocation(for: order) }
+            } label: {
+              HStack(spacing: 4) {
+                Image(systemName: "checkmark.shield.fill")
+                  .font(.system(size: 14))
+                Text("Verify")
+                  .font(.subheadline.weight(.semibold))
+              }
+              .foregroundStyle(NeonTheme.accentCyan)
+              .padding(.horizontal, 14)
+              .padding(.vertical, 10)
+              .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+              .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                  .stroke(NeonTheme.accentCyan.opacity(0.5), lineWidth: 1)
+              )
             }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(NeonTheme.accentCyan)
+            .buttonStyle(.plain)
             Image(systemName: "chevron.right")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
           }
         }
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
+      .contextMenu {
+        Button {
+          Task { await markAsShipped(order: order) }
+        } label: {
+          Label("Mark as shipped", systemImage: "shippingbox.fill")
+        }
+        .disabled(isMarkingOrderNumber != nil)
+      }
     }
     .padding(.horizontal, 16)
+  }
+
+  private func loadTodayProfit() async {
+    guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else { return }
+    guard let url = baseURL.appendingPathComponent("api/shipping-fulfillment/today-profit") as URL? else { return }
+    var req = URLRequest(url: url)
+    req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Accept")
+    do {
+      let (data, res) = try await URLSession.shared.data(for: req)
+      guard let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else { return }
+      let decoded = try JSONDecoder().decode(TodayProfitResponse.self, from: data)
+      await MainActor.run { todayProfit = decoded.todayProfit }
+    } catch {
+      await MainActor.run { todayProfit = nil }
+    }
+  }
+
+  private func markAsShipped(order: PendingOrder) async {
+    guard let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty else {
+      await MainActor.run { bannerMessage = "Sign in to mark as shipped." }
+      return
+    }
+    await MainActor.run { isMarkingOrderNumber = order.orderNumber }
+    defer { Task { @MainActor in isMarkingOrderNumber = nil } }
+    guard let url = baseURL.appendingPathComponent("api/shipping-fulfillment/mark") as URL? else { return }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    var payload: [String: Any] = ["orderNumber": order.orderNumber]
+    if let p = order.payout, p.isFinite { payload["payout"] = p }
+    req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+    do {
+      let (_, res) = try await URLSession.shared.data(for: req)
+      guard let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+        await MainActor.run { bannerMessage = "Failed to mark as shipped." }
+        return
+      }
+      await loadMarked()
+      await loadTodayProfit()
+      await MainActor.run {
+        bannerMessage = "Marked as shipped. Today's profit updated."
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+      }
+    } catch {
+      await MainActor.run { bannerMessage = "Failed: \(error.localizedDescription)" }
+    }
   }
 
   private func loadLocations() async {
@@ -730,12 +837,19 @@ struct ToShipView: View {
     do {
       _ = try await URLSession.shared.data(for: req)
       await loadMarked()
+      await loadTodayProfit()
       await MainActor.run { bannerMessage = "Undone." }
     } catch {
       await MainActor.run { bannerMessage = "Undo failed." }
     }
   }
 
+}
+
+private struct TodayProfitResponse: Decodable {
+  let todayProfit: Double?
+  let count: Int?
+  let currency: String?
 }
 
 private struct MarkedResponse: Decodable {
@@ -916,34 +1030,78 @@ private struct VerifyOrderSheet: View {
           .ignoresSafeArea()
         VStack(spacing: 20) {
           NeonCard {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Order \(order.orderNumber)")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(NeonTheme.textPrimary)
-              Text("\(requiredLabel) \(requiredScanValue)")
-                .font(.subheadline)
-                .foregroundStyle(NeonTheme.textSecondary)
-              if !isVerifyingBySlot {
-                Text("Assign a slot in Receiving to verify by SKU.")
-                  .font(.caption)
-                  .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
-                Button {
-                  Task { await fetchMatchDebug() }
-                } label: {
-                  if isLoadingMatchDebug {
-                    ProgressView()
-                      .tint(NeonTheme.accentCyan)
-                    Text("Loading…")
-                      .font(.caption)
-                      .foregroundStyle(NeonTheme.accentCyan)
-                  } else {
-                    Text("Debug: why no SKU match?")
-                      .font(.caption)
-                      .foregroundStyle(NeonTheme.accentCyan)
+            HStack(alignment: .top, spacing: 14) {
+              Group {
+                if let urlString = order.imageUrl, !urlString.isEmpty, let url = URL(string: urlString) {
+                  AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                      image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                    case .failure:
+                      Image(systemName: "tshirt.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+                    case .empty:
+                      ProgressView()
+                        .tint(NeonTheme.accentCyan)
+                    @unknown default:
+                      Image(systemName: "tshirt.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
+                    }
                   }
+                } else {
+                  Image(systemName: "tshirt.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))
                 }
-                .disabled(isLoadingMatchDebug)
               }
+              .frame(width: 56, height: 56)
+              .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+              VStack(alignment: .leading, spacing: 6) {
+                Text("Order: \(order.orderNumber)")
+                  .font(.headline.weight(.semibold))
+                  .foregroundStyle(NeonTheme.textPrimary)
+                if !order.productName.isEmpty {
+                  Text(order.productName)
+                    .font(.subheadline)
+                    .foregroundStyle(NeonTheme.textSecondary)
+                    .lineLimit(2)
+                }
+                if !order.size.isEmpty && order.size != "—" {
+                  Text("Size: \(order.size)")
+                    .font(.caption)
+                    .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+                }
+                Text("\(requiredLabel) \(requiredScanValue)")
+                  .font(.subheadline.weight(.medium))
+                  .foregroundStyle(NeonTheme.accentCyan)
+                if !isVerifyingBySlot {
+                  Text("Assign a slot in Receiving to verify by SKU.")
+                    .font(.caption)
+                    .foregroundStyle(NeonTheme.textSecondary.opacity(0.9))
+                  Button {
+                    Task { await fetchMatchDebug() }
+                  } label: {
+                    if isLoadingMatchDebug {
+                      ProgressView()
+                        .tint(NeonTheme.accentCyan)
+                      Text("Loading…")
+                        .font(.caption)
+                        .foregroundStyle(NeonTheme.accentCyan)
+                    } else {
+                      Text("Debug: why no SKU match?")
+                        .font(.caption)
+                        .foregroundStyle(NeonTheme.accentCyan)
+                    }
+                  }
+                  .disabled(isLoadingMatchDebug)
+                }
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
           }

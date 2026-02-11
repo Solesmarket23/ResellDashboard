@@ -17,10 +17,33 @@ function getUserId(request: NextRequest): string | null {
   return cookie ? String(cookie).trim() : null;
 }
 
+function parseMoney(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val !== 'string') return null;
+  const cleaned = String(val).replace(/[^0-9.\-]/g, '');
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+function getPurchaseCost(data: any): number | null {
+  const netPaid = parseMoney(data?.netPaid);
+  if (typeof netPaid === 'number' && Number.isFinite(netPaid) && netPaid >= 0) return netPaid;
+  const totalPayment = parseMoney(data?.totalPayment ?? data?.totalAmount);
+  const credits = parseMoney(data?.credits ?? data?.discounts) ?? 0;
+  if (typeof totalPayment === 'number' && Number.isFinite(totalPayment) && totalPayment > 0) {
+    return Math.max(0, totalPayment - Math.max(0, credits));
+  }
+  const purchasePrice = parseMoney(data?.purchasePrice ?? data?.price);
+  if (typeof purchasePrice === 'number' && Number.isFinite(purchasePrice) && purchasePrice > 0) return purchasePrice;
+  return null;
+}
+
 /**
  * POST /api/shipping-fulfillment/mark
- * Body: { "orderNumber": "06-XXX" }
+ * Body: { "orderNumber": "06-XXX", "payout"?: number }
  * Marks an order as shipped locally (does not call StockX).
+ * If payout is provided, looks up the allocated purchase cost and stores profit for today's shipped total.
  * Auth: Bearer (native) or userId cookie/header.
  */
 export async function POST(request: NextRequest) {
@@ -42,6 +65,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const payout =
+      typeof body?.payout === 'number' && Number.isFinite(body.payout) ? body.payout : parseMoney(body?.payout);
 
     const db = getAdminDb();
     if (!db) {
@@ -51,16 +76,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const docRef = db.collection(COLLECTIONS.MARKED_SHIPPED).doc(userId);
-    const snap = await docRef.get();
-    const existing = (snap.exists ? snap.data() : null) as { orderNumbers?: Record<string, number> } | null;
-    const orderNumbers = { ...(existing?.orderNumbers ?? {}) };
-    orderNumbers[orderNumber] = Date.now();
-
-    await docRef.set({ orderNumbers, updatedAt: new Date().toISOString() }, { merge: true });
-
-    // Mark the purchase that was allocated to this order as "sold" (used to fulfill this sale).
+    const now = Date.now();
     const nowIso = new Date().toISOString();
+
+    // Find allocated purchase for cost (and to mark as sold).
+    let cost: number | null = null;
     const soldSnap = await db
       .collection(COLLECTIONS.PURCHASES)
       .where('userId', '==', userId)
@@ -68,6 +88,8 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .get();
     if (!soldSnap.empty) {
+      const purchaseData = soldSnap.docs[0].data();
+      cost = getPurchaseCost(purchaseData);
       await soldSnap.docs[0].ref.update({
         soldAt: nowIso,
         fulfilledOrderNumber: orderNumber,
@@ -75,10 +97,37 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const profit =
+      typeof payout === 'number' && Number.isFinite(payout)
+        ? payout - (typeof cost === 'number' && Number.isFinite(cost) ? cost : 0)
+        : null;
+
+    const docRef = db.collection(COLLECTIONS.MARKED_SHIPPED).doc(userId);
+    const snap = await docRef.get();
+    const existing = (snap.exists ? snap.data() : null) as {
+      orderNumbers?: Record<string, number>;
+      orderDetails?: Record<string, { markedAt: number; payout?: number; cost?: number; profit?: number }>;
+    } | null;
+    const orderNumbers = { ...(existing?.orderNumbers ?? {}) };
+    orderNumbers[orderNumber] = now;
+    const orderDetails = { ...(existing?.orderDetails ?? {}) };
+    orderDetails[orderNumber] = {
+      markedAt: now,
+      ...(typeof payout === 'number' && Number.isFinite(payout) ? { payout } : {}),
+      ...(typeof cost === 'number' && Number.isFinite(cost) ? { cost } : {}),
+      ...(typeof profit === 'number' && Number.isFinite(profit) ? { profit } : {}),
+    };
+
+    await docRef.set(
+      { orderNumbers, orderDetails, updatedAt: nowIso },
+      { merge: true }
+    );
+
     return NextResponse.json({
       success: true,
       orderNumber,
-      markedAt: orderNumbers[orderNumber],
+      markedAt: now,
+      ...(typeof profit === 'number' && Number.isFinite(profit) ? { profit } : {}),
     });
   } catch (e) {
     console.error('[shipping-fulfillment/mark]', e);
