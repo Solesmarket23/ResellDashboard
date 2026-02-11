@@ -19,7 +19,7 @@ interface BatchProgress {
 
 interface GmailBatchedSyncProps {
   onPurchasesUpdate?: (purchases: any[]) => void | Promise<void>;
-  onSyncComplete?: (totalPurchases: number) => void | Promise<void>;
+  onSyncComplete?: (totalPurchases: number, finalPurchases?: any[]) => void | Promise<void>;
   onClose?: () => void;
   className?: string;
   autoStart?: boolean;
@@ -54,6 +54,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   // We "single-flight" the save and coalesce intermediate updates.
   const updateInFlightRef = useRef<Promise<void> | null>(null);
   const updateQueuedRef = useRef(false);
+  const latestPurchasesRef = useRef<any[]>([]);
   
   // Draggable state - start at bottom-right corner
   const [position, setPosition] = useState(() => {
@@ -84,6 +85,9 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
   const triggerNonBlockingUpdate = async (allCollectedPurchases: any[]) => {
     if (!onPurchasesUpdate) return;
 
+    // Always keep the latest snapshot, even if we coalesce updates.
+    latestPurchasesRef.current = allCollectedPurchases;
+
     // If a save is already running, queue one more run with the latest data.
     if (updateInFlightRef.current) {
       updateQueuedRef.current = true;
@@ -92,7 +96,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
 
     updateInFlightRef.current = (async () => {
       try {
-        await onPurchasesUpdate(allCollectedPurchases);
+        await onPurchasesUpdate(latestPurchasesRef.current);
       } finally {
         updateInFlightRef.current = null;
       }
@@ -104,7 +108,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
       // If something queued while we were saving, run once more with the latest snapshot.
       if (updateQueuedRef.current && !isCancelledRef.current) {
         updateQueuedRef.current = false;
-        void triggerNonBlockingUpdate(allCollectedPurchases);
+        void triggerNonBlockingUpdate(latestPurchasesRef.current);
       }
     }
   };
@@ -482,8 +486,17 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
           // If saving fails, don't crash completion; error UI is handled elsewhere.
         }
       }
+      // Ensure parent gets the final snapshot even if coalescing skipped an intermediate update.
+      // We *await* this so consumers can safely persist before reading state.
+      if (onPurchasesUpdate) {
+        try {
+          await onPurchasesUpdate(allCollectedPurchases);
+        } catch {
+          // Non-fatal; some callers intentionally do read-only updates.
+        }
+      }
       if (onSyncComplete) {
-        await onSyncComplete(allCollectedPurchases.length);
+        await onSyncComplete(allCollectedPurchases.length, allCollectedPurchases);
       }
       setIsComplete(true);
     } finally {
@@ -691,7 +704,7 @@ const GmailBatchedSync: React.FC<GmailBatchedSyncProps> = ({
                       }
                       setIsComplete(true);
                       setIsLoading(false);
-                      onSyncComplete?.(allPurchases.length);
+                      onSyncComplete?.(allPurchases.length, allPurchases);
                       setIsForceCompleting(false);
                     }}
                     className={`text-xs underline ${currentTheme.colors.textSecondary} hover:${currentTheme.colors.textPrimary}`}

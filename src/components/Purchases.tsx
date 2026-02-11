@@ -1805,7 +1805,7 @@ const Purchases = () => {
   };
 
   // Handle batched sync completion
-  const handleBatchedSyncComplete = async (totalPurchases: number) => {
+  const handleBatchedSyncComplete = async (totalPurchases: number, finalPurchases?: any[]) => {
     console.log(`✅ Batched Gmail sync complete: Found ${totalPurchases} purchases`);
     
     // Clear the "purchases cleared" flag when user manually syncs
@@ -1816,12 +1816,11 @@ const Purchases = () => {
       console.log('🔄 Cleared purchases_cleared flag - user manually synced');
     }
     
-    // CRITICAL: Use the purchases state which was set by handleBatchedPurchasesUpdate
-    // The purchases state is already consolidated and transformed
-    console.log(`📦 Sync complete - purchases state has ${purchases.length} purchases`);
+    const purchasesToPersist = Array.isArray(finalPurchases) && finalPurchases.length > 0 ? finalPurchases : purchases;
+    console.log(`📦 Sync complete - purchases to persist: ${purchasesToPersist.length} (state has ${purchases.length})`);
     
     // Log a few examples to verify purchase dates were set correctly
-    const deliveryPurchases = purchases.filter(p => 
+    const deliveryPurchases = purchasesToPersist.filter(p => 
       (p.status || p.shipping_status || '').toLowerCase() === 'delivered'
     );
     if (deliveryPurchases.length > 0) {
@@ -1832,9 +1831,9 @@ const Purchases = () => {
     }
     
     // Save Gmail purchases to Firebase - purchases were already set by handleBatchedPurchasesUpdate
-    if ((user || siteUserId) && purchases.length > 0) {
+    if ((user || siteUserId) && purchasesToPersist.length > 0) {
       try {
-        await saveGmailPurchasesToFirebase(purchases);
+        await saveGmailPurchasesToFirebase(purchasesToPersist);
         console.log(`💾 Gmail purchases persisted to Firebase/localStorage for future refreshes`);
       } catch (error) {
         console.warn(`⚠️ Could not save to Firebase (permission issue): ${error}`);
@@ -1842,7 +1841,7 @@ const Purchases = () => {
       }
     } else if (!user && !siteUserId) {
       console.log(`📧 No user authentication - Gmail purchases available in memory only`);
-    } else if (purchases.length === 0) {
+    } else if (purchasesToPersist.length === 0) {
       console.warn(`⚠️ No purchases to save - purchases state is empty!`);
     }
   };
@@ -6513,8 +6512,8 @@ const Purchases = () => {
           <div className="relative w-full h-full">
             <GmailBatchedSync
               onPurchasesUpdate={handleBatchedPurchasesUpdate}
-              onSyncComplete={(totalPurchases) => {
-                handleBatchedSyncComplete(totalPurchases);
+              onSyncComplete={(totalPurchases, finalPurchases) => {
+                handleBatchedSyncComplete(totalPurchases, finalPurchases);
                 setShowBatchedSync(false);
               }}
               onClose={() => setShowBatchedSync(false)}
