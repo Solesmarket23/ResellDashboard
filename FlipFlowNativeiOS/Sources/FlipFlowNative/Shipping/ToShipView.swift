@@ -259,7 +259,7 @@ struct ToShipView: View {
               filterBar
             }
             if !pendingOrders.isEmpty {
-              sectionHeader("Ready to ship", subtitle: "Tap an order to print its label")
+              sectionHeader("Ready to ship", subtitle: "Tap an order to verify (scan), then print label")
               if filteredPendingOrders.isEmpty && hasActiveSearchOrFilter {
                 noResultsCard
               } else {
@@ -503,7 +503,9 @@ struct ToShipView: View {
   private func pendingOrderRow(_ order: PendingOrder) -> some View {
     let imageUrl = order.imageUrl.flatMap { URL(string: $0) }
     return Button {
-      sheetOrderNumber = order.orderNumber
+      UIImpactFeedbackGenerator(style: .light).impactOccurred()
+      orderForVerify = order
+      Task { await ensureAllocation(for: order) }
     } label: {
       NeonCard {
         HStack(alignment: .center, spacing: 14) {
@@ -538,7 +540,7 @@ struct ToShipView: View {
           .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
           VStack(alignment: .leading, spacing: 4) {
-            Text("Sale order: \(order.orderNumber)")
+            Text(order.orderNumber)
               .font(.system(.subheadline, design: .monospaced).weight(.semibold))
               .foregroundStyle(NeonTheme.textPrimary)
 
@@ -550,7 +552,7 @@ struct ToShipView: View {
               .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-              Text("Style: \(order.sku)")
+              Text(order.sku)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(NeonTheme.accentCyan)
               Text("•")
@@ -581,9 +583,17 @@ struct ToShipView: View {
             }
 
             if let loc = pickLocation(for: order), !loc.isEmpty {
-              Label("Pick from \(loc)", systemImage: "location.fill")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(NeonTheme.accentEmerald)
+              HStack(spacing: 6) {
+                Image(systemName: "location.fill")
+                  .font(.caption.weight(.semibold))
+                Text("Pick from \(loc)")
+                  .font(.caption.weight(.semibold))
+              }
+              .foregroundStyle(NeonTheme.accentEmerald)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 6)
+              .background(NeonTheme.accentEmerald.opacity(0.10), in: Capsule())
+              .overlay(Capsule().stroke(NeonTheme.accentEmerald.opacity(0.25), lineWidth: 1))
             }
             if let shipBy = Self.shipByDateESTDisplay(order.shipByDate), !shipBy.isEmpty {
               Text("Ship by \(shipBy)")
@@ -595,25 +605,21 @@ struct ToShipView: View {
 
           VStack(spacing: 8) {
             Button {
-              orderForVerify = order
-              Task { await ensureAllocation(for: order) }
+              UIImpactFeedbackGenerator(style: .light).impactOccurred()
+              sheetOrderNumber = order.orderNumber
             } label: {
-              HStack(spacing: 4) {
-                Image(systemName: "checkmark.shield.fill")
-                  .font(.system(size: 14))
-                Text("Verify")
-                  .font(.subheadline.weight(.semibold))
-              }
-              .foregroundStyle(NeonTheme.accentCyan)
-              .padding(.horizontal, 14)
-              .padding(.vertical, 10)
-              .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-              .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                  .stroke(NeonTheme.accentCyan.opacity(0.5), lineWidth: 1)
-              )
+              Image(systemName: "printer.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(NeonTheme.accentCyan)
+                .frame(width: 40, height: 40)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                  RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(NeonTheme.border.opacity(0.7), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
+
             Image(systemName: "chevron.right")
               .font(.system(size: 12, weight: .semibold))
               .foregroundStyle(NeonTheme.textSecondary.opacity(0.7))

@@ -23,8 +23,37 @@ struct AssignedSlotsView: View {
   @State private var isLoading = false
   @State private var bannerMessage: String?
   @State private var deletingId: String?
+  @State private var searchText: String = ""
+  @State private var selectedBin: String? = nil
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
+
+  private var availableBins: [String] {
+    let bins = Set(items.compactMap { item in
+      let loc = item.pickLocation.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+      guard let first = loc.first, first.isLetter else { return nil }
+      return String(first)
+    })
+    return Array(bins).sorted()
+  }
+
+  private var filteredItems: [AssignedSlotItem] {
+    let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return items.filter { item in
+      // Bin filter
+      if let b = selectedBin, !b.isEmpty {
+        let loc = item.pickLocation.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if !loc.hasPrefix(b.uppercased()) { return false }
+      }
+
+      // Search filter
+      if q.isEmpty { return true }
+      let loc = item.pickLocation.lowercased()
+      let name = (item.productName ?? "").lowercased()
+      let style = (item.styleId ?? "").lowercased()
+      return loc.contains(q) || name.contains(q) || style.contains(q)
+    }
+  }
 
   var body: some View {
     ZStack {
@@ -41,7 +70,13 @@ struct AssignedSlotsView: View {
           emptyStateCard
           Spacer()
         } else {
-          listSection
+          searchBar
+          binFilterBar
+          if filteredItems.isEmpty {
+            noResultsCard
+          } else {
+            listSection
+          }
         }
       }
       .padding(.top, 8)
@@ -68,17 +103,113 @@ struct AssignedSlotsView: View {
 
   private var listSection: some View {
     List {
-      ForEach(items) { item in
+      ForEach(filteredItems) { item in
         AssignedSlotRow(item: item, isDeleting: deletingId == item.id, onPrint: { printLabel(for: item) })
           .listRowBackground(NeonCard { EmptyView() })
           .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
           .listRowSeparator(.hidden)
       }
-      .onDelete(perform: deleteItems)
+      .onDelete { offsets in
+        // Offsets are based on the filtered list.
+        for index in offsets {
+          guard index < filteredItems.count else { continue }
+          let item = filteredItems[index]
+          Task { await clearSlot(purchaseId: item.id) }
+        }
+      }
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
     .background(Color.clear)
+  }
+
+  private var searchBar: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass")
+        .foregroundStyle(NeonTheme.textSecondary)
+      TextField("Search by SKU, product, style ID", text: $searchText)
+        .textFieldStyle(.plain)
+        .foregroundStyle(NeonTheme.textPrimary)
+        .autocorrectionDisabled()
+        .autocapitalization(.none)
+      if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        Button {
+          searchText = ""
+          UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+          Image(systemName: "xmark.circle.fill")
+            .foregroundStyle(NeonTheme.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear search")
+      }
+    }
+    .padding(.vertical, 10)
+    .padding(.horizontal, 14)
+    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .stroke(NeonTheme.border.opacity(0.6), lineWidth: 1)
+    )
+    .padding(.horizontal, 16)
+  }
+
+  private var binFilterBar: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        binChip(title: "All bins", isSelected: selectedBin == nil) {
+          selectedBin = nil
+        }
+        ForEach(availableBins, id: \.self) { bin in
+          binChip(title: "Bin \(bin)", isSelected: selectedBin == bin) {
+            selectedBin = bin
+          }
+        }
+      }
+      .padding(.horizontal, 16)
+    }
+  }
+
+  private func binChip(title: String, isSelected: Bool, onTap: @escaping () -> Void) -> some View {
+    Button {
+      onTap()
+      UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    } label: {
+      Text(title)
+        .font(.caption.weight(.medium))
+        .foregroundStyle(isSelected ? NeonTheme.textPrimary : NeonTheme.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+          isSelected ? AnyShapeStyle(NeonTheme.primaryGradient.opacity(0.95)) : AnyShapeStyle(Color.white.opacity(0.08)),
+          in: Capsule()
+        )
+        .overlay(
+          Capsule()
+            .stroke(isSelected ? NeonTheme.accentCyan.opacity(0.5) : NeonTheme.border.opacity(0.6), lineWidth: 1)
+        )
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var noResultsCard: some View {
+    NeonCard {
+      VStack(spacing: 10) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 28))
+          .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+        Text("No results found")
+          .font(.headline.weight(.semibold))
+          .foregroundStyle(NeonTheme.textPrimary)
+        Text("Try a different SKU, product name, or style ID. You can also switch bins or clear the search.")
+          .font(.caption)
+          .foregroundStyle(NeonTheme.textSecondary)
+          .multilineTextAlignment(.center)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 20)
+    }
+    .padding(.horizontal, 16)
   }
 
   private func printLabel(for item: AssignedSlotItem) {

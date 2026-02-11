@@ -1514,6 +1514,17 @@ const Purchases = () => {
     setNotification({ isVisible: true, message, type });
   };
 
+  const pickTracking = (p: any): string => {
+    const v =
+      p?.tracking ??
+      p?.trackingNumber ??
+      p?.tracking_number ??
+      p?.shipment?.tracking ??
+      p?.shipment?.trackingNumber ??
+      '';
+    return String(v || '').trim();
+  };
+
   // Export functions
   const convertToExportablePurchases = (purchases: any[]): ExportablePurchase[] => {
     return purchases.map(purchase => ({
@@ -1523,7 +1534,7 @@ const Purchases = () => {
       size: purchase.product?.size || '',
       orderNumber: purchase.orderNumber || '',
       status: purchase.status || '',
-      tracking: purchase.tracking || '',
+      tracking: pickTracking(purchase),
       market: purchase.market || purchase.marketplace || '',
       price: purchase.price || '',
       originalPrice: purchase.originalPrice || '',
@@ -1595,7 +1606,7 @@ const Purchases = () => {
       const existingPurchase = existingPurchasesMap.get(purchase.orderNumber);
       
       // Preserve tracking number from existing purchase if it exists, otherwise use new data
-      const tracking = existingPurchase?.tracking || purchase.tracking || '';
+      const tracking = pickTracking(existingPurchase) || pickTracking(purchase) || '';
       
       // Only set carrier if there's a tracking number
       let carrier = null;
@@ -2253,7 +2264,7 @@ const Purchases = () => {
         // Clean up invalid carrier values
         const cleanedPurchase = cleanupCarrier(purchase);
 
-        const tracking = cleanedPurchase.tracking || '';
+        const tracking = pickTracking(cleanedPurchase);
         const carrier = cleanedPurchase.carrier;
 
         return {

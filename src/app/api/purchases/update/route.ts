@@ -63,6 +63,19 @@ export async function POST(request: NextRequest) {
     // Duplicate tracking number guard (per user) unless allowDuplicateTracking === true
     const nextTracking = pickTrackingFromUpdates(normalizedUpdates);
 
+    // Keep field names consistent across the app:
+    // - Some clients write `tracking`, others write `trackingNumber`.
+    // - The web Purchases table historically reads `tracking`.
+    // Mirror to both when one is provided.
+    if (nextTracking) {
+      if (!Object.prototype.hasOwnProperty.call(normalizedUpdates, 'tracking')) {
+        normalizedUpdates.tracking = nextTracking;
+      }
+      if (!Object.prototype.hasOwnProperty.call(normalizedUpdates, 'trackingNumber')) {
+        normalizedUpdates.trackingNumber = nextTracking;
+      }
+    }
+
     const inferNotFound = (t: any): boolean => {
       if (!t) return false;
       if (t?.error) return false; // explicit errors handled separately
