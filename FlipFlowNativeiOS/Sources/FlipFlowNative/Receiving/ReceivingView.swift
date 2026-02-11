@@ -55,6 +55,7 @@ private struct ReceivingScreen: View {
   @State private var isSavingBin: Bool = false
   @State private var assignBinBanner: String?
   @State private var isAssigningToNextSlot: Bool = false
+  @State private var isPrintingTestLabel: Bool = false
 
   private func applyActiveStepHighlight<V: View>(_ view: V, isActive: Bool) -> some View {
     view
@@ -166,6 +167,10 @@ private struct ReceivingScreen: View {
   }
 
   private func saveAssignBin() async {
+    guard !vm.trialModeEnabled else {
+      assignBinBanner = "Trial mode is ON. Turn it off in the menu to save slots."
+      return
+    }
     guard let purchaseId = vm.selected?.id, !purchaseId.isEmpty,
           !assignBinLocation.trimmingCharacters(in: .whitespaces).isEmpty,
           let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty
@@ -210,6 +215,10 @@ private struct ReceivingScreen: View {
 
   /// One-tap auto-assign: fetch next available slot and set pick location without opening the sheet.
   private func assignToNextAvailableSlot() async {
+    guard !vm.trialModeEnabled else {
+      vm.banner = "Trial mode is ON. Turn it off in the menu to save slots to the cloud."
+      return
+    }
     guard let purchaseId = vm.selected?.id, !purchaseId.isEmpty,
           let bearer = try? await auth.getApiBearerToken(forcingRefresh: false), !bearer.isEmpty
     else {
@@ -391,6 +400,38 @@ private struct ReceivingScreen: View {
                 systemImage: vm.trialModeEnabled ? "cloud.slash" : "cloud.fill"
               )
             }
+            Button {
+              vm.hideAssignSlotShortcut.toggle()
+            } label: {
+              Label(
+                vm.hideAssignSlotShortcut ? "Show \"Assign slot & finish\" shortcut" : "Hide \"Assign slot & finish\" shortcut",
+                systemImage: vm.hideAssignSlotShortcut ? "arrow.down.circle" : "arrow.down.circle.fill"
+              )
+            }
+            Button {
+              Task { @MainActor in
+                isPrintingTestLabel = true
+                let pdf = LabelPrinting.makeLabelPDF(
+                  sku: "TEST1",
+                  productName: "Fear of God Essentials Fleece Essential Sweatpant Light Heather Gray",
+                  productSize: "M",
+                  styleId: nil,
+                  productImage: nil,
+                  isTest: true
+                )
+                LabelPrinting.presentPrintSheet(pdfData: pdf, jobName: "FlipFlow SKU TEST1") { _, _ in
+                  Task { @MainActor in
+                    isPrintingTestLabel = false
+                  }
+                }
+              }
+            } label: {
+              Label(
+                "Test print SKU label",
+                systemImage: "printer"
+              )
+            }
+            .disabled(isPrintingTestLabel)
           } label: {
             Image(systemName: "slider.horizontal.3")
               .font(.system(size: 16, weight: .semibold))
@@ -549,7 +590,7 @@ private struct ReceivingScreen: View {
               }
             }
 
-            if vm.isStep1Complete && (!vm.isStep2Complete || !vm.isStep3Complete) {
+            if !vm.hideAssignSlotShortcut, vm.isStep1Complete && (!vm.isStep2Complete || !vm.isStep3Complete) {
               Button {
                 vm.skipSteps2And3ForTesting()
                 expanded.insert(.result)
@@ -826,79 +867,7 @@ private struct ReceivingScreen: View {
             .buttonStyle(.plain)
           }
 
-        if isExpanded {
-          Button {
-            Task {
-              UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-              isPrintingLabel = true
-              vm.banner = "Preparing label…"
-              guard vm.isStep1Complete, let selected = vm.selected else {
-                isPrintingLabel = false
-                vm.banner = "Scan an item first (Step 1: Tracking) before printing a SKU label."
-                return
-              }
-              do {
-                // Use pick location (e.g. A43) as the SKU on the label when set; otherwise assign/get legacy SKU.
-                // Prefer effectivePickLocationForSelected() so we use the just-assigned slot immediately (no timing gap).
-                let skuForLabel: String
-                if let loc = vm.effectivePickLocationForSelected(), !loc.isEmpty {
-                  skuForLabel = loc
-                } else {
-                  skuForLabel = try await vm.assignSku()
-                }
-                let img = await LabelPrinting.loadProductImage(urlString: selected.productImageUrl)
-                let pdf = LabelPrinting.makeLabelPDF(
-                  sku: skuForLabel,
-                  productName: selected.productName,
-                  productSize: selected.productSize,
-                  styleId: selected.styleId,
-                  productImage: img,
-                  isTest: !vm.syncEnabled && (selected.sku == nil)
-                )
-                vm.banner = "Opening print dialog…"
-                LabelPrinting.presentPrintSheet(
-                  pdfData: pdf,
-                  jobName: "FlipFlow SKU \(skuForLabel)"
-                ) { completed, error in
-                  Task { @MainActor in
-                    isPrintingLabel = false
-                    if let error {
-                      UINotificationFeedbackGenerator().notificationOccurred(.error)
-                      vm.banner = "Print failed: \((error as NSError).localizedDescription)"
-                    } else if completed {
-                      UINotificationFeedbackGenerator().notificationOccurred(.success)
-                      vm.banner = "Sent to printer."
-                    } else {
-                      vm.banner = "Printing canceled."
-                    }
-                  }
-                }
-              } catch {
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
-                isPrintingLabel = false
-                vm.banner = "Failed to assign/print SKU: \((error as NSError).localizedDescription)"
-              }
-            }
-          } label: {
-            HStack {
-              Image(systemName: "printer.fill")
-              if isPrintingLabel {
-                ProgressView()
-                  .tint(.white)
-                Text("Printing…")
-                  .fontWeight(.semibold)
-              } else {
-                Text("Print SKU label")
-                  .fontWeight(.semibold)
-              }
-            }
-            .foregroundStyle(.white)
-          }
-          .disabled(isPrintingLabel)
-          .buttonStyle(NeonPrimaryButtonStyle())
-          .padding(.top, 2)
-        }
-
+          // Slot first (assign or choose), then Print SKU label, so top-to-bottom flow uses slot format.
           if let loc = vm.effectivePickLocationForSelected(), !loc.isEmpty {
             Text("Location: \(loc)")
               .font(.subheadline.weight(.semibold))
@@ -950,6 +919,81 @@ private struct ReceivingScreen: View {
             .padding(.top, 2)
           }
 
+          Button {
+            Task {
+              UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+              isPrintingLabel = true
+              vm.banner = "Preparing label…"
+              guard vm.isStep1Complete, let selected = vm.selected else {
+                isPrintingLabel = false
+                vm.banner = "Scan an item first (Step 1: Tracking) before printing a SKU label."
+                return
+              }
+              do {
+                // Prefer slot (pick location); if none, try to assign to next slot first so label uses slot format.
+                var skuForLabel: String?
+                if let loc = vm.effectivePickLocationForSelected(), !loc.isEmpty {
+                  skuForLabel = loc
+                } else {
+                  await assignToNextAvailableSlot()
+                  skuForLabel = vm.effectivePickLocationForSelected().flatMap { $0.isEmpty ? nil : $0 }
+                }
+                if skuForLabel == nil || (skuForLabel?.isEmpty == true) {
+                  skuForLabel = try await vm.assignSku()
+                }
+                let sku = skuForLabel ?? "SKU"
+                let img = await LabelPrinting.loadProductImage(urlString: selected.productImageUrl)
+                let pdf = LabelPrinting.makeLabelPDF(
+                  sku: sku,
+                  productName: selected.productName,
+                  productSize: selected.productSize,
+                  styleId: selected.styleId,
+                  productImage: img,
+                  isTest: !vm.syncEnabled && (selected.sku == nil)
+                )
+                vm.banner = "Opening print dialog…"
+                LabelPrinting.presentPrintSheet(
+                  pdfData: pdf,
+                  jobName: "FlipFlow SKU \(sku)"
+                ) { completed, error in
+                  Task { @MainActor in
+                    isPrintingLabel = false
+                    if let error {
+                      UINotificationFeedbackGenerator().notificationOccurred(.error)
+                      vm.banner = "Print failed: \((error as NSError).localizedDescription)"
+                    } else if completed {
+                      UINotificationFeedbackGenerator().notificationOccurred(.success)
+                      vm.banner = "Sent to printer."
+                    } else {
+                      vm.banner = "Printing canceled."
+                    }
+                  }
+                }
+              } catch {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                isPrintingLabel = false
+                vm.banner = "Failed to assign/print SKU: \((error as NSError).localizedDescription)"
+              }
+            }
+          } label: {
+            HStack {
+              Image(systemName: "printer.fill")
+              if isPrintingLabel {
+                ProgressView()
+                  .tint(.white)
+                Text("Printing…")
+                  .fontWeight(.semibold)
+              } else {
+                Text("Print SKU label")
+                  .fontWeight(.semibold)
+              }
+            }
+            .foregroundStyle(.white)
+          }
+          .disabled(isPrintingLabel)
+          .buttonStyle(NeonPrimaryButtonStyle())
+          .padding(.top, 2)
+
           if vm.selected?.received == false {
             Button {
               Task { await vm.markReceived(method: vm.trackingEntryMethod) }
@@ -975,7 +1019,7 @@ private struct ReceivingScreen: View {
           } label: {
             HStack {
               Image(systemName: "arrow.counterclockwise")
-              Text("Start next item")
+              Text("Finish")
                 .fontWeight(.semibold)
             }
             .foregroundStyle(.white)

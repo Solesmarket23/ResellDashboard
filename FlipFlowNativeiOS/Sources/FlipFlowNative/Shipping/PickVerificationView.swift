@@ -1,4 +1,5 @@
 import SwiftUI
+import AudioToolbox
 
 /// Show required SKU and style ID for an order; scan barcode; match if scanned equals either SKU or style ID.
 struct PickVerificationView: View {
@@ -96,13 +97,27 @@ private struct PickVerifyScannerSheet: View {
   let onClose: () -> Void
   @State private var torchOn = false
   @State private var torchStatus = ""
+  @State private var rejectMessage: String?
 
   var body: some View {
     NavigationStack {
       ZStack {
         AVCaptureScannerView(
           scanMode: .tracking,
-          onPayload: { onPayload($0) },
+          onPayload: { raw in
+            let scanNorm = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !scanNorm.isEmpty && TrackingDetection.looksLikeTrackingNumber(scanNorm) {
+              rejectMessage = "That's a tracking number. Scan the product or SKU label."
+              UINotificationFeedbackGenerator().notificationOccurred(.warning)
+              AudioServicesPlaySystemSound(1320)
+              Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                rejectMessage = nil
+              }
+              return
+            }
+            onPayload(raw)
+          },
           onClose: onClose,
           torchOn: $torchOn,
           onTorchStatus: { torchStatus = $0 }
@@ -121,6 +136,16 @@ private struct PickVerifyScannerSheet: View {
           Spacer()
         }
         .allowsHitTesting(false)
+        if let msg = rejectMessage {
+          Text(msg)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.orange.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity)
+        }
         VStack {
           HStack {
             Spacer()
@@ -139,6 +164,7 @@ private struct PickVerifyScannerSheet: View {
           Spacer()
         }
       }
+      .animation(.easeInOut(duration: 0.2), value: rejectMessage)
       .navigationTitle("Scan to verify")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

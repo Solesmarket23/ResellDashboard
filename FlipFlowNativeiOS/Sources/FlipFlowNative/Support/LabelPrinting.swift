@@ -3,10 +3,31 @@ import SwiftUI
 import UIKit
 import PDFKit
 
+/// Retained as print controller delegate so we can auto-pick paper size (e.g. 1.2" x 2.2") for SKU labels.
+private final class LabelPrintDelegate: NSObject, UIPrintInteractionControllerDelegate {
+  let desiredSize: CGSize
+
+  init(desiredSize: CGSize) {
+    self.desiredSize = desiredSize
+  }
+
+  func printInteractionController(
+    _ printInteractionController: UIPrintInteractionController,
+    choosePaper paperList: [UIPrintPaper]
+  ) -> UIPrintPaper {
+    guard let first = paperList.first else {
+      fatalError("UIPrintInteractionController choosePaper called with empty paper list")
+    }
+    return UIPrintPaper.bestPaper(forPageSize: desiredSize, withPapersFrom: paperList) ?? first
+  }
+}
+
 enum LabelPrinting {
   // 1 inch = 72 points in PDF space.
   // User label: 1.25" x 2.25" (commonly 2.25w x 1.25h in landscape).
   static let labelSizePoints = CGSize(width: 2.25 * 72.0, height: 1.25 * 72.0)
+
+  private static var printDelegate: LabelPrintDelegate?
 
   static func makeLabelPDF(
     sku: String,
@@ -59,7 +80,7 @@ enum LabelPrinting {
       let paragraphTitle: NSParagraphStyle = {
         let p = NSMutableParagraphStyle()
         p.alignment = .left
-        p.lineBreakMode = .byTruncatingTail
+        p.lineBreakMode = .byWordWrapping
         return p
       }()
       let paragraphSub: NSParagraphStyle = {
@@ -68,18 +89,14 @@ enum LabelPrinting {
         return p
       }()
 
-      // Proposed layout:
-      // - Title full-width at top (2 lines)
-      // - Size/style line on left, image on right (same row block as size+sku)
-      // - SKU line below
-      // Slight left inset so wrapped line alignment looks intentional.
+      // Layout: title (up to 2 lines, left-aligned) then size/SKU then barcode.
       let titleInsetX: CGFloat = 1
-      // Give the title enough height for 2 lines so it doesn't clip.
-      let titleRect = CGRect(x: bounds.minX + titleInsetX, y: bounds.minY, width: bounds.width - titleInsetX, height: 24)
+      let titleMaxHeight: CGFloat = 26
+      let titleRect = CGRect(x: bounds.minX + titleInsetX, y: bounds.minY, width: bounds.width - titleInsetX, height: titleMaxHeight)
       let titleAttrs2: [NSAttributedString.Key: Any] = titleAttrs.merging([.paragraphStyle: paragraphTitle]) { $1 }
-      (title as NSString).draw(with: titleRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: titleAttrs2, context: nil)
+      (title as NSString).draw(with: titleRect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: titleAttrs2, context: nil)
 
-      let rowY = titleRect.maxY + 1
+      let rowY = titleRect.maxY + 2
       // Make the product image ~40% larger (24 -> ~34).
       // +10% from the last revision.
       let imgSize: CGFloat = 37
@@ -197,6 +214,16 @@ enum LabelPrinting {
     return rotatedData
   }
 
+  /// If the PDF has more than one page, returns a new PDF with only the first page (no re-render, so orientation stays correct).
+  static func pdfDataSinglePage(_ data: Data) -> Data {
+    guard let doc = PDFDocument(data: data), doc.pageCount > 0 else { return data }
+    if doc.pageCount == 1 { return data }
+    let onePage = PDFDocument()
+    guard let first = doc.page(at: 0) else { return data }
+    onePage.insert(first, at: 0)
+    return onePage.dataRepresentation() ?? data
+  }
+
   /// rotate90Clockwise: nil = no rotation, true = 90° CW, false = 90° CCW
   @MainActor
   static func presentPrintSheet(
@@ -206,14 +233,17 @@ enum LabelPrinting {
     rotate90Clockwise: Bool? = nil,
     onComplete: ((Bool, Error?) -> Void)? = nil
   ) {
-    let dataToPrint: Data
+    var dataToPrint: Data
     if let cw = rotate90Clockwise, let rotated = rotatePDF90(pdfData, clockwise: cw) {
       dataToPrint = rotated
     } else {
       dataToPrint = pdfData
     }
+    dataToPrint = pdfDataSinglePage(dataToPrint)
     let controller = UIPrintInteractionController.shared
+    controller.printingItems = nil
     controller.printingItem = dataToPrint
+    controller.showsNumberOfCopies = false
     controller.printInfo = {
       let info = UIPrintInfo(dictionary: nil)
       info.outputType = .general
@@ -222,7 +252,11 @@ enum LabelPrinting {
       return info
     }()
 
+    let delegate = LabelPrintDelegate(desiredSize: labelSizePoints)
+    Self.printDelegate = delegate
+    controller.delegate = delegate
     controller.present(animated: true) { _, completed, error in
+      Self.printDelegate = nil
       onComplete?(completed, error)
     }
   }
@@ -263,12 +297,12 @@ enum Code128Barcode {
     let scaleY: CGFloat = 5.0
     let scaled = output.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
 
-    // Slightly thicken bars (subtle) while staying scannable.
-    // This expands dark regions a bit, making the barcode look less "hairline" in previews.
+    // Thicken bars by ~20% total (1.2 * 1.1 * 1.1) for better scan reliability and visibility.
+    let thicknessRadius: CGFloat = 1.2 * 1.10 * 1.10
     let thickened: CIImage = {
       guard let f = CIFilter(name: "CIMorphologyMinimum") else { return scaled }
       f.setValue(scaled, forKey: kCIInputImageKey)
-      f.setValue(1.2, forKey: kCIInputRadiusKey)
+      f.setValue(thicknessRadius, forKey: kCIInputRadiusKey)
       return f.outputImage ?? scaled
     }()
     let context = CIContext(options: [.useSoftwareRenderer: false])

@@ -99,6 +99,24 @@ enum TrackingDetection {
     return all.first
   }
 
+  /// True if the payload looks like a UPS, FedEx, or USPS tracking number.
+  /// Use in SKU verify flow to ignore accidental tracking scans and avoid false "Wrong item."
+  static func looksLikeTrackingNumber(_ raw: String) -> Bool {
+    let n = normalize(raw)
+    if n.isEmpty { return false }
+    if validateSupported(n) != nil { return true }
+    // USPS / other: long digit strings (e.g. 20–30 digits)
+    if n.count >= 12, n.allSatisfy({ $0.isNumber }) { return true }
+    return false
+  }
+
+  /// True if the payload looks like a slot/SKU barcode: one letter A–H then digits (e.g. A1, B42, H123).
+  static func looksLikeSlotSku(_ raw: String) -> Bool {
+    let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if t.isEmpty { return false }
+    return t.range(of: #"^[A-Ha-h][0-9]+$"#, options: .regularExpression) != nil
+  }
+
   /// Best-effort: extract a tracking-like candidate even if it's not supported.
   /// Used only for user-facing feedback ("we captured X but can't use it").
   static func extractTrackingLike(from raw: String) -> String? {

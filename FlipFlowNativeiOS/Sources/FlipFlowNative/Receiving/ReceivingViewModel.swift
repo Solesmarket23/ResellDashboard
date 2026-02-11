@@ -6,6 +6,7 @@ final class ReceivingViewModel: ObservableObject {
   private let showItemBannerKey = "flipflow_show_item_banner_v1"
   private let syncEnabledKey = "flipflow_sync_enabled_v1"
   private let trialModeEnabledKey = "flipflow_trial_mode_v1"
+  private let hideAssignSlotShortcutKey = "flipflow_hide_assign_slot_shortcut_v1"
   private let localSkuMapKey = "flipflow_local_sku_map_v1"
   private let maxProcessedEntries = 200
 
@@ -43,6 +44,12 @@ final class ReceivingViewModel: ObservableObject {
   @Published var trialModeEnabled: Bool = true {
     didSet {
       UserDefaults.standard.set(trialModeEnabled, forKey: trialModeEnabledKey)
+    }
+  }
+  /// When true, the "Assign slot & finish" shortcut in Step 1 is hidden so you always go through Steps 2–4.
+  @Published var hideAssignSlotShortcut: Bool = true {
+    didSet {
+      UserDefaults.standard.set(hideAssignSlotShortcut, forKey: hideAssignSlotShortcutKey)
     }
   }
 
@@ -109,6 +116,7 @@ final class ReceivingViewModel: ObservableObject {
     self.showItemBanner = UserDefaults.standard.object(forKey: showItemBannerKey) as? Bool ?? true
     self.syncEnabled = UserDefaults.standard.object(forKey: syncEnabledKey) as? Bool ?? false
     self.trialModeEnabled = UserDefaults.standard.object(forKey: trialModeEnabledKey) as? Bool ?? true
+    self.hideAssignSlotShortcut = UserDefaults.standard.object(forKey: hideAssignSlotShortcutKey) as? Bool ?? true
   }
 
   func normalizeTracking(_ raw: String) -> String {

@@ -35,9 +35,18 @@ struct ToShipView: View {
   @State private var searchText: String = ""
   @State private var filterSize: String? = nil
   @State private var filterProductName: String? = nil
+  /// When set and recent, we show cached data and refresh in background instead of blocking.
+  @State private var lastReadyToShipFetchTime: Date?
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
+  /// Cache considered fresh for this many seconds; within that, open screen shows cache and refreshes in background. Sales don't change often during a shipping session.
+  private static let readyToShipCacheInterval: TimeInterval = 600
   private var isLoading: Bool { isLoadingPending || isLoadingMarked }
+
+  private var hasFreshReadyToShipCache: Bool {
+    guard let t = lastReadyToShipFetchTime else { return false }
+    return Date().timeIntervalSince(t) < Self.readyToShipCacheInterval
+  }
 
   private var filteredPendingOrders: [PendingOrder] {
     var list = pendingOrders
@@ -151,9 +160,19 @@ struct ToShipView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbarBackground(.hidden, for: .navigationBar)
     .task {
+      if hasFreshReadyToShipCache {
+        Task {
+          await loadLocations()
+          await loadPending()
+          await loadMarked()
+          await MainActor.run { lastReadyToShipFetchTime = Date() }
+        }
+        return
+      }
       await loadLocations()
       await loadPending()
       await loadMarked()
+      lastReadyToShipFetchTime = Date()
     }
     .fullScreenCover(item: $orderForVerify) { order in
       let slot = pickLocation(for: order)
@@ -289,6 +308,7 @@ struct ToShipView: View {
           await loadLocations()
           await loadPending()
           await loadMarked()
+          lastReadyToShipFetchTime = Date()
         }
       }
     }
@@ -998,7 +1018,7 @@ private struct VerifyOrderSheet: View {
           HStack(spacing: 16) {
             Button {
               UINotificationFeedbackGenerator().notificationOccurred(.success)
-              AudioServicesPlaySystemSound(1057)
+              ScanSounds.playSuccess()
               verificationResult = "Correct item."
             } label: {
               Text("Test success")
@@ -1065,7 +1085,7 @@ private struct VerifyOrderSheet: View {
                 verificationResult = "No barcode value."
               } else if scanNorm == requiredNorm {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                AudioServicesPlaySystemSound(1057)
+                ScanSounds.playSuccess()
                 verificationResult = "Correct item."
               } else {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
@@ -1124,13 +1144,35 @@ private struct VerifyScannerOverlay: View {
   @Binding var torchOn: Bool
   let onPayload: (String) -> Void
   let onClose: () -> Void
+  @State private var rejectMessage: String?
 
   var body: some View {
     NavigationStack {
       ZStack {
         AVCaptureScannerView(
           scanMode: .tracking,
-          onPayload: { onPayload($0) },
+          onPayload: { raw in
+            let scanNorm = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if scanNorm.isEmpty {
+              onPayload(raw)
+              return
+            }
+            if TrackingDetection.looksLikeTrackingNumber(scanNorm) {
+              rejectMessage = "That's a tracking number. Scan the SKU label (e.g. A1, B42)."
+              UINotificationFeedbackGenerator().notificationOccurred(.warning)
+              AudioServicesPlaySystemSound(1320)
+              clearRejectMessageAfterDelay()
+              return
+            }
+            if !TrackingDetection.looksLikeSlotSku(scanNorm) {
+              rejectMessage = "Scan the SKU label (e.g. A1, B42)."
+              UINotificationFeedbackGenerator().notificationOccurred(.warning)
+              AudioServicesPlaySystemSound(1320)
+              clearRejectMessageAfterDelay()
+              return
+            }
+            onPayload(raw)
+          },
           onClose: onClose,
           torchOn: $torchOn,
           onTorchStatus: { _ in }
@@ -1142,13 +1184,24 @@ private struct VerifyScannerOverlay: View {
             .strokeBorder(Color.white.opacity(0.85), lineWidth: 3)
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.06)))
             .frame(width: 280, height: 280)
-          Text("Scan product barcode to verify")
+          Text("Scan SKU label to verify")
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
             .padding(.top, 14)
           Spacer()
         }
         .allowsHitTesting(false)
+        if let msg = rejectMessage {
+          Text(msg)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.orange.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
         VStack {
           HStack {
             Spacer()
@@ -1167,6 +1220,7 @@ private struct VerifyScannerOverlay: View {
           Spacer()
         }
       }
+      .animation(.easeInOut(duration: 0.2), value: rejectMessage)
       .navigationTitle("Scan to verify")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -1176,6 +1230,13 @@ private struct VerifyScannerOverlay: View {
         }
       }
       .toolbarBackground(.hidden, for: .navigationBar)
+    }
+  }
+
+  private func clearRejectMessageAfterDelay() {
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 2_500_000_000)
+      rejectMessage = nil
     }
   }
 }

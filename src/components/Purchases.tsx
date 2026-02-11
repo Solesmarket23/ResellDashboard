@@ -1775,18 +1775,28 @@ const Purchases = () => {
       purchaseDate: transformedPurchases[0].purchaseDate
     });
     
-    // MERGE new purchases with existing ones (don't replace)
-    // Create a map of existing purchases by order number
+    // MERGE: update existing rows when sync has newer data (e.g. Ordered → Shipped), add new orders
+    const existingByOrder = new Map((purchases.map(p => [p.orderNumber, p]) as [string, any][]));
+    const incomingByOrder = new Map((transformedPurchases.map(p => [p.orderNumber, p]) as [string, any][]));
+
+    const mergedPurchases = purchases.map((p) => {
+      const incoming = incomingByOrder.get(p.orderNumber);
+      if (!incoming) return p;
+      // Update existing row with sync data; keep Firebase id and preserve existing tracking/carrier if incoming has none
+      return {
+        ...incoming,
+        id: p.id || incoming.id,
+        tracking: (incoming.tracking && String(incoming.tracking).trim() !== '') ? incoming.tracking : (p.tracking || ''),
+        carrier: (incoming.carrier && String(incoming.carrier).trim() !== '') ? incoming.carrier : (p.carrier ?? null),
+      };
+    });
+
     const existingOrderNumbers = new Set(purchases.map(p => p.orderNumber));
-    
-    // Filter out any new purchases that already exist (by order number)
-    const newPurchasesOnly = consolidatedPurchases.filter(p => !existingOrderNumbers.has(p.orderNumber));
-    
-    // Merge: keep existing + add only new ones
-    const mergedPurchases = [...purchases, ...newPurchasesOnly];
-    
-    console.log(`🔄 Merging purchases: ${purchases.length} existing + ${newPurchasesOnly.length} new = ${mergedPurchases.length} total`);
-    
+    transformedPurchases.forEach((p) => {
+      if (!existingOrderNumbers.has(p.orderNumber)) mergedPurchases.push(p);
+    });
+
+    console.log(`🔄 Merging purchases: ${purchases.length} existing, ${incomingByOrder.size} from sync (updates + new), ${mergedPurchases.length} total`);
     setPurchases(mergedPurchases);
     
     // Combine with manual purchases for totals

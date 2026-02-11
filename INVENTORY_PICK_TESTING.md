@@ -1,5 +1,52 @@
 # Inventory & Pick Testing Guide
 
+## Receiving → Firebase: make sure your work is saved
+
+Use this checklist **before** processing real inventory in the iOS app so nothing is lost.
+
+### 1. Turn OFF trial mode
+
+- In **Receiving**, open the **menu** (top right).
+- Tap **"Turn OFF trial mode (save to cloud)"** so it shows **"Turn ON trial mode (no saves)"** when you’re done.
+- **Trial mode ON** = nothing is written to Firebase or the API (pick location, received, verification are all local-only or skipped).
+- **Trial mode OFF** = writes are allowed when web sync is on.
+
+### 2. Turn ON web sync (writes)
+
+- In the same menu, tap **"Enable web sync (writes)"** so it’s enabled.
+- When **web sync is OFF**, the app does not call the backend for assign-SKU, mark-received, or verification. Pick location is also gated by trial mode (see above).
+- When **web sync is ON** and trial mode is OFF, all receiving actions that persist data will go to Firebase (or your API, depending on sign-in).
+
+### 3. Be signed in
+
+- You must be **signed in** (Firebase or site password). If you’re signed out, Receiving will show “Please sign in” and no data is saved.
+
+### 4. Backend (API) is deployed
+
+- **Assign to next slot** and **Choose specific slot** call your hosted API (`/api/purchases/set-pick-location`, `/api/inventory/next-available-slot`). So your Next.js app (e.g. on Vercel) must be **deployed** and reachable.
+- **Mark received**, **verification**, and (when using site password) **lookup** go through the same backend when using “site password” sign-in. When using **Firebase** sign-in, mark received and verification write **directly to Firestore** from the app; lookup also uses Firestore. So:
+  - **Firebase sign-in:** Pick location still uses the API; mark received + verification use Firestore. Ensure the app can reach your API for slots, and that Firebase is configured in the app.
+  - **Site password sign-in:** All of the above go through your API; the API must be deployed and must have access to Firebase (or your data store).
+
+### What gets saved when (and where)
+
+| Action | Trial OFF + sync ON? | Where it’s saved |
+|--------|----------------------|-------------------|
+| **Assign to next slot** / **Choose specific slot** | Yes (and trial must be OFF) | API → Firebase (purchases: `pickLocation`) |
+| **Mark as received** (button or “Start next item”) | Yes | Repo (Firestore or API) → `received: true` etc. |
+| **Verification** (Authentic / Not authentic) | Yes (when you tap “Start next item” with sync ON) | Repo → purchase document |
+| **Lookup** (tracking search) | Read-only | Firestore or API (no write) |
+
+If **trial mode is ON**, none of the write actions above will run; you’ll see a message like “Trial mode is ON. Turn it off…” instead of saving.
+
+### Quick verification
+
+1. Turn **trial mode OFF** and **web sync ON** in the Receiving menu.
+2. Process **one** item: scan/enter tracking → **Assign to next slot** (or choose a slot) → tap **Mark as received** (or complete the flow and **Start next item**).
+3. In your Firebase Console (or your app’s “Assigned slots” / Ready to Ship), confirm the purchase has `pickLocation` and `received: true`. Then you’re good to process more.
+
+---
+
 ## End-to-end checklist (what to test)
 
 Use this list to confirm the full flow works. Pick **Path A** (receive → assign bin → allocation) or **Path B** (manual Pick locations only).
@@ -150,6 +197,23 @@ If Match debug shows a slot (e.g. A1) but **received: NO**, that item won’t be
 
 1. **Ship → Pick locations → Add:** Enter the **style ID** (SKU) from a pending order and a **location** (e.g. A1). Save.
 2. **Ready to Ship:** Pull to refresh. That order shows “Pick from A1” from the manual map (no purchase allocation).
+
+---
+
+## "No purchase found" when scanning tracking (iOS)
+
+The app looks up the purchase by **tracking number** (e.g. UPS 397954927419). The purchase document in Firebase must have that tracking stored in one of: `tracking`, `trackingNumber`, `tracking_number`, or `shipment.tracking` / `shipment.trackingNumber`.
+
+**If the web (solesmarket.com) still shows the order as "Ordered" / "Not Shipped Yet"** even though you got an "Order Shipped" email with tracking, the purchase was never updated with the shipped status and tracking. The iOS app will then say **"No purchase found"** when you scan that tracking number.
+
+**Fix:** On **solesmarket.com**, open the **Purchases** page and run **Sync Gmail**. That will:
+
+1. Fetch your recent Gmail messages (including the "Order Shipped" email).
+2. Parse tracking and status from the shipped email.
+3. **Merge** by order number: the existing "Ordered" row is updated with status **Shipped** and the **tracking number**.
+4. The by-tracking API can then find that purchase when you scan on iOS.
+
+After syncing, refresh the Purchases table and confirm the row shows **Shipped** and the tracking number. Then scan the same tracking again in the iOS app—it should find the purchase.
 
 ---
 
