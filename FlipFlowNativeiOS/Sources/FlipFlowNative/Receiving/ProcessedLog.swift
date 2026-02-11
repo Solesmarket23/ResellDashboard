@@ -20,13 +20,24 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
   let authUrl: String?
   let authResult: AuthStatus
 
+  enum SyncState: String, Codable {
+    case pending
+    case synced
+    case failed
+  }
+
+  var syncState: SyncState
+  var syncError: String?
+  let scannedTrackingNumber: String?
+
   init(
     processedAt: Date,
     purchase: PurchaseMatch,
     stockxUnitQrRaw: String?,
     authProvider: String?,
     authUrl: String?,
-    authResult: AuthStatus
+    authResult: AuthStatus,
+    scannedTrackingNumber: String?
   ) {
     self.processedAt = processedAt
     self.purchaseId = purchase.id
@@ -40,6 +51,9 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     self.authProvider = authProvider
     self.authUrl = authUrl
     self.authResult = authResult
+    self.syncState = .pending
+    self.syncError = nil
+    self.scannedTrackingNumber = scannedTrackingNumber
 
     // Stable-ish ID for dedupe: purchaseId + timestamp.
     self.id = "\(purchase.id)|\(Int(processedAt.timeIntervalSince1970))"
@@ -59,6 +73,9 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     case authProvider
     case authUrl
     case authResult
+    case syncState
+    case syncError
+    case scannedTrackingNumber
   }
 
   init(from decoder: Decoder) throws {
@@ -77,6 +94,9 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     self.authUrl = try c.decodeIfPresent(String.self, forKey: .authUrl)
     let raw = try c.decode(String.self, forKey: .authResult)
     self.authResult = AuthStatus(rawValue: raw) ?? .unknown
+    self.syncState = (try? c.decode(SyncState.self, forKey: .syncState)) ?? .pending
+    self.syncError = try c.decodeIfPresent(String.self, forKey: .syncError)
+    self.scannedTrackingNumber = try c.decodeIfPresent(String.self, forKey: .scannedTrackingNumber)
   }
 
   func encode(to encoder: Encoder) throws {
@@ -94,6 +114,9 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     try c.encodeIfPresent(authProvider, forKey: .authProvider)
     try c.encodeIfPresent(authUrl, forKey: .authUrl)
     try c.encode(authResult.rawValue, forKey: .authResult)
+    try c.encode(syncState, forKey: .syncState)
+    try c.encodeIfPresent(syncError, forKey: .syncError)
+    try c.encodeIfPresent(scannedTrackingNumber, forKey: .scannedTrackingNumber)
   }
 }
 

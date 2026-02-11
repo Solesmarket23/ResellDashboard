@@ -1128,7 +1128,13 @@ private struct ReceivingScreen: View {
         } else {
           VStack(spacing: 0) {
             ForEach(vm.processedLog) { e in
-              ProcessedLogRow(entry: e, onDelete: { vm.deleteProcessedLogEntry(id: e.id) })
+              ProcessedLogRow(
+                entry: e,
+                onDelete: { vm.deleteProcessedLogEntry(id: e.id) },
+                onRetry: {
+                  Task { await vm.retrySyncProcessedLogEntry(id: e.id) }
+                }
+              )
               if e.id != vm.processedLog.last?.id {
                 Divider().overlay(NeonTheme.border.opacity(0.35))
               }
@@ -1300,6 +1306,7 @@ private struct NeonToast: View {
 private struct ProcessedLogRow: View {
   let entry: ProcessedLogEntry
   let onDelete: () -> Void
+  let onRetry: (() -> Void)?
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
@@ -1346,6 +1353,24 @@ private struct ProcessedLogRow: View {
         Text(formatter.string(from: entry.processedAt))
           .font(.caption2)
           .foregroundStyle(NeonTheme.textSecondary.opacity(0.85))
+
+        HStack(spacing: 8) {
+          statusPill
+          if entry.syncState == .failed, onRetry != nil {
+            Button("Retry") {
+              onRetry?()
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(NeonTheme.accentCyan)
+            .buttonStyle(.plain)
+          }
+        }
+        if entry.syncState == .failed, let err = entry.syncError, !err.isEmpty {
+          Text(err)
+            .font(.caption2)
+            .foregroundStyle(Color.red.opacity(0.9))
+            .lineLimit(2)
+        }
       }
 
       Spacer()
@@ -1383,6 +1408,29 @@ private struct ProcessedLogRow: View {
     f.dateStyle = .short
     f.timeStyle = .short
     return f
+  }
+
+  private var statusPill: some View {
+    let (text, bg, fg): (String, Color, Color) = {
+      switch entry.syncState {
+      case .synced:
+        return ("Saved", Color.green.opacity(0.22), Color.green.opacity(0.95))
+      case .failed:
+        return ("Not saved", Color.red.opacity(0.22), Color.red.opacity(0.95))
+      case .pending:
+        return ("Saving…", Color.white.opacity(0.10), Color.white.opacity(0.85))
+      }
+    }()
+    return Text(text)
+      .font(.caption2.weight(.bold))
+      .foregroundStyle(fg)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(bg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .stroke(Color.white.opacity(0.10), lineWidth: 1)
+      )
   }
 }
 

@@ -409,7 +409,8 @@ final class ReceivingViewModel: ObservableObject {
       stockxUnitQrRaw: stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines),
       authProvider: externalProvider.trimmingCharacters(in: .whitespacesAndNewlines),
       authUrl: externalUrl.trimmingCharacters(in: .whitespacesAndNewlines),
-      authResult: externalStatus
+      authResult: externalStatus,
+      scannedTrackingNumber: normalizeTracking(trackingInput)
     )
     appendProcessedLog(entry)
 
@@ -453,8 +454,17 @@ final class ReceivingViewModel: ObservableObject {
         receivedNotes: nil,
         alsoMarkDelivered: false
       )
+      updateProcessedLogEntry(id: entry.id) { e in
+        e.syncState = .synced
+        e.syncError = nil
+      }
     } catch {
-      banner = "Sync failed: \((error as NSError).localizedDescription)"
+      let msg = (error as NSError).localizedDescription
+      updateProcessedLogEntry(id: entry.id) { e in
+        e.syncState = .failed
+        e.syncError = msg
+      }
+      banner = "Sync failed: \(msg)"
       return false
     }
 
@@ -479,6 +489,79 @@ final class ReceivingViewModel: ObservableObject {
       processedLog = Array(processedLog.prefix(maxProcessedEntries))
     }
     persistProcessedLog()
+  }
+
+  private func updateProcessedLogEntry(id: String, mutate: (inout ProcessedLogEntry) -> Void) {
+    guard let idx = processedLog.firstIndex(where: { $0.id == id }) else { return }
+    var copy = processedLog[idx]
+    mutate(&copy)
+    processedLog[idx] = copy
+    persistProcessedLog()
+  }
+
+  func retrySyncProcessedLogEntry(id: String) async {
+    guard let entry = processedLog.first(where: { $0.id == id }) else { return }
+    guard !trialModeEnabled else {
+      banner = "Trial mode is ON. Turn it off in the menu to save to solesmarket.com."
+      return
+    }
+    guard syncEnabled else {
+      banner = "Web sync is OFF. Enable it in the menu to save to solesmarket.com."
+      return
+    }
+    guard let userId = userIdProvider() else {
+      banner = "Not signed in. Can't sync."
+      return
+    }
+
+    updateProcessedLogEntry(id: id) { e in
+      e.syncState = .pending
+      e.syncError = nil
+    }
+
+    do {
+      let scanned = normalizeTracking(entry.scannedTrackingNumber ?? entry.trackingNumber ?? "")
+      if !scanned.isEmpty {
+        let carrier: String? = {
+          switch TrackingDetection.validateSupported(scanned) {
+          case .ups?: return "UPS"
+          case .fedex?: return "FedEx"
+          case nil: return nil
+          }
+        }()
+        try await repo.updateTracking(purchaseId: entry.purchaseId, userId: userId, trackingNumber: scanned, carrier: carrier)
+      }
+      try await repo.saveVerification(
+        purchaseId: entry.purchaseId,
+        userId: userId,
+        authSelfStatus: .unknown,
+        authSelfNotes: "",
+        externalProvider: entry.authProvider ?? "Other",
+        externalUrl: entry.authUrl ?? "",
+        externalStatus: entry.authResult,
+        stockxUnitQrRaw: entry.stockxUnitQrRaw ?? ""
+      )
+      try await repo.markReceived(
+        purchaseId: entry.purchaseId,
+        userId: userId,
+        receivedMethod: "retry",
+        receivedNotes: nil,
+        alsoMarkDelivered: false
+      )
+
+      updateProcessedLogEntry(id: id) { e in
+        e.syncState = .synced
+        e.syncError = nil
+      }
+      banner = "Saved to solesmarket.com."
+    } catch {
+      let msg = (error as NSError).localizedDescription
+      updateProcessedLogEntry(id: id) { e in
+        e.syncState = .failed
+        e.syncError = msg
+      }
+      banner = "Sync failed: \(msg)"
+    }
   }
 
   private func persistProcessedLog() {
