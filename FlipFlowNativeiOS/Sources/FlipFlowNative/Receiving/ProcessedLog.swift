@@ -24,6 +24,8 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     case pending
     case synced
     case failed
+    /// Saved locally only; not yet posted to web. User can Post or Clear.
+    case draft
   }
 
   var syncState: SyncState
@@ -37,7 +39,8 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     authProvider: String?,
     authUrl: String?,
     authResult: AuthStatus,
-    scannedTrackingNumber: String?
+    scannedTrackingNumber: String?,
+    asDraft: Bool = false
   ) {
     self.processedAt = processedAt
     self.purchaseId = purchase.id
@@ -51,7 +54,7 @@ struct ProcessedLogEntry: Identifiable, Codable, Hashable {
     self.authProvider = authProvider
     self.authUrl = authUrl
     self.authResult = authResult
-    self.syncState = .pending
+    self.syncState = asDraft ? .draft : .pending
     self.syncError = nil
     self.scannedTrackingNumber = scannedTrackingNumber
 

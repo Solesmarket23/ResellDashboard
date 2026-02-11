@@ -350,7 +350,8 @@ private struct ReceivingScreen: View {
         .onChange(of: vm.flowStep) { step in
           expanded.insert(step)
           withAnimation(.easeInOut(duration: 0.22)) {
-            proxy.scrollTo(scrollId(for: step), anchor: .top)
+            // Scroll the next step into the middle so the top toast doesn't cover it.
+            proxy.scrollTo(scrollId(for: step), anchor: .center)
           }
         }
         .safeAreaInset(edge: .bottom) {
@@ -907,28 +908,6 @@ private struct ReceivingScreen: View {
             .padding(.top, 2)
           } else {
             Button {
-              Task { await assignToNextAvailableSlot() }
-            } label: {
-              HStack {
-                Image(systemName: "location.fill")
-                if isAssigningToNextSlot {
-                  ProgressView()
-                    .tint(.white)
-                  Text("Assigning…")
-                    .fontWeight(.semibold)
-                } else {
-                  Text("Assign to next slot")
-                    .fontWeight(.semibold)
-                }
-              }
-              .foregroundStyle(.white)
-            }
-            .buttonStyle(NeonPrimaryButtonStyle())
-            .disabled(vm.selected == nil || isAssigningToNextSlot)
-            .opacity(vm.selected == nil ? 0.6 : 1)
-            .padding(.top, 6)
-
-            Button {
               assignBinLocation = ""
               assignBinBanner = nil
               showAssignBinSheet = true
@@ -1016,38 +995,35 @@ private struct ReceivingScreen: View {
           .buttonStyle(NeonPrimaryButtonStyle())
           .padding(.top, 2)
 
-          if vm.selected?.received == false {
-            Button {
-              Task { await vm.markReceived(method: vm.trackingEntryMethod) }
-            } label: {
-              HStack {
-                Image(systemName: "checkmark.circle.fill")
-                Text("Mark as received")
-                  .fontWeight(.semibold)
-              }
-              .foregroundStyle(.white)
+          Button {
+            vm.saveDraft()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+          } label: {
+            HStack {
+              Image(systemName: "doc.badge.plus")
+              Text("Save draft")
+                .fontWeight(.semibold)
             }
-            .buttonStyle(NeonPrimaryButtonStyle())
-            .padding(.top, 2)
+            .foregroundStyle(NeonTheme.accentCyan)
           }
+          .buttonStyle(.plain)
+          .padding(.top, 4)
 
           Button {
             Task {
-              // Immediate tap feedback
               UIImpactFeedbackGenerator(style: .light).impactOccurred()
               let didReset = await vm.completeCurrentItemAndStartNext()
               if didReset {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 expanded = [.tracking]
               } else {
-                // If the flow didn't complete (missing step / sync failure), give a subtle error haptic.
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
               }
             }
           } label: {
             HStack {
-              Image(systemName: "arrow.counterclockwise")
-              Text("Finish")
+              Image(systemName: "checkmark.circle.fill")
+              Text("Mark as received")
                 .fontWeight(.semibold)
             }
             .foregroundStyle(.white)
@@ -1356,7 +1332,14 @@ private struct ProcessedLogRow: View {
 
         HStack(spacing: 8) {
           statusPill
-          if entry.syncState == .failed, onRetry != nil {
+          if entry.syncState == .draft, onRetry != nil {
+            Button("Post") {
+              onRetry?()
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(NeonTheme.accentCyan)
+            .buttonStyle(.plain)
+          } else if (entry.syncState == .failed || isStalePending), onRetry != nil {
             Button("Retry") {
               onRetry?()
             }
@@ -1417,8 +1400,10 @@ private struct ProcessedLogRow: View {
         return ("Saved", Color.green.opacity(0.22), Color.green.opacity(0.95))
       case .failed:
         return ("Not saved", Color.red.opacity(0.22), Color.red.opacity(0.95))
+      case .draft:
+        return ("Draft", Color.orange.opacity(0.22), Color.orange.opacity(0.95))
       case .pending:
-        return ("Saving…", Color.white.opacity(0.10), Color.white.opacity(0.85))
+        return (isStalePending ? "Still saving…" : "Saving…", Color.white.opacity(0.10), Color.white.opacity(0.85))
       }
     }()
     return Text(text)
@@ -1431,6 +1416,11 @@ private struct ProcessedLogRow: View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
           .stroke(Color.white.opacity(0.10), lineWidth: 1)
       )
+  }
+
+  private var isStalePending: Bool {
+    guard entry.syncState == .pending else { return false }
+    return Date().timeIntervalSince(entry.processedAt) > 20
   }
 }
 

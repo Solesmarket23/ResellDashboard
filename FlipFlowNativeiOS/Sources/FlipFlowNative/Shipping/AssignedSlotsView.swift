@@ -85,7 +85,7 @@ struct AssignedSlotsView: View {
         Text("No assigned slots")
           .font(.headline.weight(.semibold))
           .foregroundStyle(NeonTheme.textPrimary)
-        Text("Slots you assign in Receiving (Assign to next slot) will appear here. Swipe left to remove and reset.")
+        Text("Slots you assign in Receiving (choose a slot or Print SKU label) will appear here. Swipe left to remove and reset.")
           .font(.caption)
           .foregroundStyle(NeonTheme.textSecondary)
           .multilineTextAlignment(.center)

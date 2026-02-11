@@ -126,6 +126,25 @@ final class ReceivingViewModel: ObservableObject {
     self.syncEnabled = UserDefaults.standard.object(forKey: syncEnabledKey) as? Bool ?? false
     self.trialModeEnabled = UserDefaults.standard.object(forKey: trialModeEnabledKey) as? Bool ?? true
     self.hideAssignSlotShortcut = UserDefaults.standard.object(forKey: hideAssignSlotShortcutKey) as? Bool ?? true
+
+    // If the app was interrupted mid-save, entries can remain stuck on "Saving…".
+    // Also, older log entries created before we tracked sync state will decode as `.pending`.
+    // Treat stale pending entries as failed so the user gets a clear "Not saved" + Retry path.
+    self.processedLog = Self.normalizeProcessedLogOnLoad(self.processedLog)
+  }
+
+  private static func normalizeProcessedLogOnLoad(_ entries: [ProcessedLogEntry]) -> [ProcessedLogEntry] {
+    let now = Date()
+    return entries.map { entry in
+      guard entry.syncState == .pending else { return entry }
+      let age = now.timeIntervalSince(entry.processedAt)
+      // If it's been more than 30s, assume it didn't complete.
+      guard age > 30 else { return entry }
+      var copy = entry
+      copy.syncState = .failed
+      copy.syncError = copy.syncError ?? "Sync interrupted. Tap Retry to post to solesmarket.com."
+      return copy
+    }
   }
 
   func normalizeTracking(_ raw: String) -> String {
@@ -374,6 +393,10 @@ final class ReceivingViewModel: ObservableObject {
       banner = "No item selected."
       return false
     }
+    // If we had a draft for this item, remove it so we only have one entry per completion.
+    processedLog.removeAll { $0.purchaseId == selected.id && $0.syncState == .draft }
+    persistProcessedLog()
+
     // Guided gating: always tell the user the *next missing step*.
     if !isStep1Complete {
       banner = "Action required: Scan tracking (Step 1) first."
@@ -470,6 +493,30 @@ final class ReceivingViewModel: ObservableObject {
 
     resetFlowForNextItem()
     return true
+  }
+
+  /// Save current item as a draft (local log only). Appears in Processed section; user can Post or Clear.
+  func saveDraft() {
+    guard let selected else {
+      banner = "No item selected."
+      return
+    }
+    guard isStep1Complete else {
+      banner = "Scan tracking (Step 1) first, then you can save a draft."
+      return
+    }
+    let entry = ProcessedLogEntry(
+      processedAt: Date(),
+      purchase: selected,
+      stockxUnitQrRaw: stockxUnitQrRaw.trimmingCharacters(in: .whitespacesAndNewlines),
+      authProvider: externalProvider.trimmingCharacters(in: .whitespacesAndNewlines),
+      authUrl: externalUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+      authResult: externalStatus,
+      scannedTrackingNumber: normalizeTracking(trackingInput),
+      asDraft: true
+    )
+    appendProcessedLog(entry)
+    banner = "Draft saved. Post or clear it in the Processed list below."
   }
 
   func deleteProcessedLogEntry(id: String) {
