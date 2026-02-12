@@ -145,7 +145,8 @@ const Purchases = () => {
   const [sortBy, setSortBy] = useState('purchaseDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  // Default to showing all rows (matches Deliveries UX + reduces confusion).
+  const [itemsPerPage, setItemsPerPage] = useState(-1);
   const [currentPage, setCurrentPage] = useState(1);
   
   // Smart Filters State
@@ -162,6 +163,10 @@ const Purchases = () => {
     market: [],
     size: []
   });
+
+  // Presets (like Deliveries): quick, single-purpose filters.
+  const [presetNeedsTracking, setPresetNeedsTracking] = useState<boolean>(false);
+  const [presetInvalidTracking, setPresetInvalidTracking] = useState<boolean>(false);
 
   // ---- Status normalization (prevents duplicate filters like "Shipped" vs "shipped") ----
   const normalizeStatusKey = useCallback((raw: unknown): string => {
@@ -1038,6 +1043,42 @@ const Purchases = () => {
         );
       });
     }
+
+    // Preset filters (missing/invalid tracking)
+    if (presetNeedsTracking || presetInvalidTracking) {
+      const pickTrackingAny = (p: any): string =>
+        String(
+          p?.tracking ??
+            p?.trackingNumber ??
+            p?.tracking_number ??
+            p?.shipment?.tracking ??
+            p?.shipment?.trackingNumber ??
+            ''
+        ).trim();
+
+      const isValidUpsOrFedex = (t: string): boolean => {
+        const v = String(t || '').trim().toUpperCase().replace(/[\s-]/g, '');
+        if (!v) return false;
+        if (/^1Z[0-9A-Z]{15,18}$/.test(v)) return true;
+        if (/^\d{12}$/.test(v) && v.startsWith('9')) return false;
+        if (/^\d{12,15}$/.test(v)) return true;
+        if (/^\d{20,}$/.test(v)) return true;
+        return false;
+      };
+
+      if (presetNeedsTracking) {
+        uniquePurchases = uniquePurchases.filter((p) => {
+          const tracking = pickTrackingAny(p);
+          const statusKey = normalizeStatusKey(p?.status || p?.shipping_status || '');
+          return !tracking && statusKey !== 'ordered';
+        });
+      } else if (presetInvalidTracking) {
+        uniquePurchases = uniquePurchases.filter((p) => {
+          const tracking = pickTrackingAny(p);
+          return !!tracking && !isValidUpsOrFedex(tracking);
+        });
+      }
+    }
     
     console.log(`🎯 After filters: ${uniquePurchases.length} purchases`);
     
@@ -1250,6 +1291,72 @@ const Purchases = () => {
                            activeFilters.hasTracking !== null || 
                            activeFilters.market.length > 0 ||
                            activeFilters.size.length > 0;
+
+  const presetCounts = useMemo(() => {
+    const allPurchases = [...purchases, ...manualPurchases];
+    const validPurchases = allPurchases.filter((p) => p && typeof p === 'object' && p.orderNumber);
+
+    // Deduplicate by order number using the same priority rules as the main table.
+    const uniqueMap = new Map<string, any>();
+    validPurchases.forEach((purchase) => {
+      const orderNumber = String(purchase.orderNumber || '').trim();
+      if (!orderNumber) return;
+      const existing = uniqueMap.get(orderNumber);
+      if (!existing) {
+        uniqueMap.set(orderNumber, purchase);
+        return;
+      }
+      const existingPriority = getStatusPriority(existing.status || 'Ordered');
+      const newPriority = getStatusPriority(purchase.status || 'Ordered');
+      if (newPriority > existingPriority) {
+        uniqueMap.set(orderNumber, purchase);
+        return;
+      }
+      const existingTracking = String(existing.tracking || '').trim();
+      const nextTracking = String(purchase.tracking || '').trim();
+      if (newPriority === existingPriority && nextTracking && !existingTracking) {
+        uniqueMap.set(orderNumber, purchase);
+      }
+    });
+
+    const uniquePurchases = Array.from(uniqueMap.values());
+
+    const pickTrackingAny = (p: any): string =>
+      String(
+        p?.tracking ??
+          p?.trackingNumber ??
+          p?.tracking_number ??
+          p?.shipment?.tracking ??
+          p?.shipment?.trackingNumber ??
+          ''
+      ).trim();
+
+    const isValidUpsOrFedex = (t: string): boolean => {
+      const v = String(t || '').trim().toUpperCase().replace(/[\s-]/g, '');
+      if (!v) return false;
+      // UPS: 1Z + 16 alphanumeric (sometimes a bit longer in practice).
+      if (/^1Z[0-9A-Z]{15,18}$/.test(v)) return true;
+      // FedEx: 12–15 digits, or 20+ digits (some formats). Reject 12-digit starting with 9 (common false positives).
+      if (/^\d{12}$/.test(v) && v.startsWith('9')) return false;
+      if (/^\d{12,15}$/.test(v)) return true;
+      if (/^\d{20,}$/.test(v)) return true;
+      return false;
+    };
+
+    let needs = 0;
+    let invalid = 0;
+
+    for (const p of uniquePurchases) {
+      const tracking = pickTrackingAny(p);
+      const statusKey = normalizeStatusKey(p?.status || p?.shipping_status || '');
+      const isOrdered = statusKey === 'ordered';
+
+      if (!tracking && !isOrdered) needs += 1;
+      if (tracking && !isValidUpsOrFedex(tracking)) invalid += 1;
+    }
+
+    return { needs, invalid };
+  }, [purchases, manualPurchases, normalizeStatusKey]);
   
   // Sort icon component
   const SortIcon = ({ column }: { column: string }) => {
@@ -4078,6 +4185,45 @@ const Purchases = () => {
                 </span>
               )}
               <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Presets (Deliveries-style) */}
+            <div className={`h-6 w-px ${currentTheme.name === 'Neon' ? 'bg-white/10' : 'bg-gray-300'}`} />
+            <button
+              type="button"
+              onClick={() => {
+                setPresetNeedsTracking((v) => !v);
+                setPresetInvalidTracking(false);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                presetNeedsTracking
+                  ? (currentTheme.name === 'Neon'
+                      ? 'bg-cyan-500 text-black border-cyan-400'
+                      : 'bg-blue-600 text-white border-blue-600')
+                  : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
+              }`}
+              title="Show purchases missing tracking (UPS/FedEx) where status is not Ordered"
+            >
+              Needs tracking ({presetCounts.needs})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPresetInvalidTracking((v) => !v);
+                setPresetNeedsTracking(false);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                presetInvalidTracking
+                  ? (currentTheme.name === 'Neon'
+                      ? 'bg-cyan-500 text-black border-cyan-400'
+                      : 'bg-blue-600 text-white border-blue-600')
+                  : `${currentTheme.colors.border} ${currentTheme.colors.textPrimary} hover:bg-gray-100 dark:hover:bg-gray-700`
+              }`}
+              title="Show purchases with a tracking value that is not a valid UPS/FedEx number"
+            >
+              Invalid tracking ({presetCounts.invalid})
             </button>
 
             {/* Active Filter Pills */}
