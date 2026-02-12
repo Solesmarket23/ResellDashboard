@@ -1,9 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDocumentsServer } from '@/lib/firebase/firebaseServerUtils';
+import { getDocumentsServer, addDocument, deleteDocument } from '@/lib/firebase/firebaseServerUtils';
 import { trackingService } from '@/lib/tracking/trackingService';
+import { COLLECTIONS } from '@/lib/firebase/collections';
 
-// Simple in-memory storage for manual tracking during testing
-const manualTrackingStorage = new Map<string, any[]>();
+/** Fetch manual delivery entries from Firebase and convert to purchase-like shape for merging. */
+async function getManualDeliveriesFromFirebase(userId: string): Promise<any[]> {
+  try {
+    const docs = await getDocumentsServer(COLLECTIONS.MANUAL_DELIVERIES, {
+      where: [{ field: 'userId', operator: '==', value: userId }]
+    });
+    return docs.map((d: any) => ({
+      id: d.id,
+      userId: d.userId,
+      orderNumber: d.orderNumber || `manual-${d.id}`,
+      tracking: d.trackingNumber || '',
+      trackingNumber: d.trackingNumber || '',
+      tracking_number: d.trackingNumber || '',
+      carrier: d.carrier,
+      productName: d.productName || 'Manual',
+      productBrand: d.productBrand || '',
+      productSize: d.productSize || '',
+      status: d.status || 'shipped',
+      purchaseDate: d.createdAt,
+      price: 0,
+      platform: 'Manual',
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+    }));
+  } catch (e) {
+    console.error('Failed to load manual deliveries from Firebase:', e);
+    return [];
+  }
+}
 
 function firstNonEmptyString(...vals: any[]): string | undefined {
   for (const v of vals) {
@@ -264,11 +292,11 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    // Include any manual trackings added via PUT (in-memory during this process lifetime)
-    const manualFromMemory = manualTrackingStorage.get(userId) || [];
-    if (manualFromMemory.length > 0) {
-      console.log(`📝 Including ${manualFromMemory.length} manual tracking entr${manualFromMemory.length === 1 ? 'y' : 'ies'} from memory`);
-      purchasesWithTracking = [...manualFromMemory, ...purchasesWithTracking];
+    // Include manual trackings added via "Add Tracking" (persisted in Firebase)
+    const manualFromFirebase = await getManualDeliveriesFromFirebase(userId);
+    if (manualFromFirebase.length > 0) {
+      console.log(`📝 Including ${manualFromFirebase.length} manual tracking entr${manualFromFirebase.length === 1 ? 'y' : 'ies'} from Firebase`);
+      purchasesWithTracking = [...manualFromFirebase, ...purchasesWithTracking];
     }
 
     console.log(`📦 Found ${purchasesWithTracking.length} purchases eligible for deliveries (tracking + in-progress)`);
@@ -544,7 +572,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Add manual tracking to in-memory storage
+// Add manual tracking — persisted to Firebase so it survives refresh
 export async function PUT(request: NextRequest) {
   try {
     const { userId, trackingNumber, productName, productBrand, productSize, carrier } = await request.json();
@@ -553,29 +581,33 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'User ID and tracking number are required' }, { status: 400 });
     }
 
-    const manualTracking = {
-      id: `manual-${Date.now()}`,
-      userId: userId,
-      orderNumber: `manual-${Date.now()}`,
-      tracking: trackingNumber,
-      trackingNumber: trackingNumber,
-      carrier: carrier || undefined, // allow auto-detect downstream
-      productName: productName || 'Manual Test Package',
-      productBrand: productBrand || 'Test Brand',
-      productSize: productSize || 'Unknown',
+    const now = new Date().toISOString();
+    const trimmedTracking = String(trackingNumber).trim();
+    const orderNumber = `manual-${Date.now()}`;
+
+    const data = {
+      userId,
+      trackingNumber: trimmedTracking,
+      carrier: carrier || undefined,
+      productName: productName?.trim() || 'Manual',
+      productBrand: productBrand?.trim() || '',
+      productSize: productSize?.trim() || '',
+      orderNumber,
       status: 'shipped',
-      purchaseDate: new Date().toISOString(),
-      price: 0,
-      platform: 'Manual Test',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: now,
+      updatedAt: now,
     };
 
-    // Store in memory
-    if (!manualTrackingStorage.has(userId)) {
-      manualTrackingStorage.set(userId, []);
-    }
-    manualTrackingStorage.get(userId)!.push(manualTracking);
+    const ref = await addDocument(COLLECTIONS.MANUAL_DELIVERIES, data);
+    const id = ref?.id ?? `manual-${Date.now()}`;
+    const manualTracking = {
+      id,
+      ...data,
+      tracking: trimmedTracking,
+      purchaseDate: now,
+      price: 0,
+      platform: 'Manual',
+    };
 
     return NextResponse.json({
       success: true,
@@ -592,21 +624,23 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// Delete manual tracking from in-memory storage
+// Delete manual tracking from Firebase
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
-    const trackingNumber = searchParams.get('trackingNumber');
+    const trackingNumber = searchParams.get('trackingNumber')?.trim();
     
     if (!userId || !trackingNumber) {
       return NextResponse.json({ error: 'User ID and tracking number are required' }, { status: 400 });
     }
 
-    if (manualTrackingStorage.has(userId)) {
-      const userTrackings = manualTrackingStorage.get(userId)!;
-      const filteredTrackings = userTrackings.filter(t => t.trackingNumber !== trackingNumber);
-      manualTrackingStorage.set(userId, filteredTrackings);
+    const docs = await getDocumentsServer(COLLECTIONS.MANUAL_DELIVERIES, {
+      where: [{ field: 'userId', operator: '==', value: userId }]
+    });
+    const toDelete = docs.filter((d: any) => (d.trackingNumber || '').trim() === trackingNumber);
+    for (const doc of toDelete) {
+      await deleteDocument(COLLECTIONS.MANUAL_DELIVERIES, doc.id);
     }
 
     return NextResponse.json({
@@ -695,6 +729,13 @@ export async function POST(request: NextRequest) {
       if (!archived) return hasTracking(purchase) || isInProgressStatus(purchase);
       return true;
     });
+
+    // Include manual trackings added via "Add Tracking" (persisted in Firebase)
+    const manualFromFirebase = await getManualDeliveriesFromFirebase(userId);
+    if (manualFromFirebase.length > 0) {
+      console.log(`📝 Including ${manualFromFirebase.length} manual tracking entr${manualFromFirebase.length === 1 ? 'y' : 'ies'} from Firebase`);
+      purchasesWithTracking = [...manualFromFirebase, ...purchasesWithTracking];
+    }
 
     console.log(`📦 Found ${purchasesWithTracking.length} purchases eligible for deliveries (tracking + in-progress)`);
 

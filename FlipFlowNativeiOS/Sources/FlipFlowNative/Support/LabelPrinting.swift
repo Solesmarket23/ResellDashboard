@@ -35,7 +35,8 @@ enum LabelPrinting {
     productSize: String?,
     styleId: String?,
     productImage: UIImage?,
-    isTest: Bool
+    isTest: Bool,
+    purchasePrice: String? = nil
   ) -> Data {
     let skuString = sku.trimmingCharacters(in: .whitespacesAndNewlines)
     let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: labelSizePoints))
@@ -115,7 +116,20 @@ enum LabelPrinting {
       }
       sizeStyle.draw(with: subRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
 
-      let skuRect = CGRect(x: bounds.minX, y: subRect.maxY + 1, width: bounds.width - textRightPad, height: 10)
+      var skuY = subRect.maxY + 1
+      if let price = purchasePrice?.trimmingCharacters(in: .whitespacesAndNewlines), !price.isEmpty {
+        let priceAttrs: [NSAttributedString.Key: Any] = [
+          .font: UIFont.systemFont(ofSize: 8, weight: .medium),
+          .foregroundColor: UIColor.black.withAlphaComponent(0.85),
+          .paragraphStyle: paragraphSub,
+        ]
+        let priceLine = "Paid: \(price)"
+        let priceRect = CGRect(x: bounds.minX, y: skuY, width: bounds.width - textRightPad, height: 9)
+        (priceLine as NSString).draw(with: priceRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: priceAttrs, context: nil)
+        skuY = priceRect.maxY + 1
+      }
+
+      let skuRect = CGRect(x: bounds.minX, y: skuY, width: bounds.width - textRightPad, height: 10)
       let skuAttrs2: [NSAttributedString.Key: Any] = skuAttrs.merging([.paragraphStyle: paragraphSub]) { $1 }
       if isTest {
         let skuText = NSMutableAttributedString(string: "SKU: \(skuString)", attributes: skuAttrs2)

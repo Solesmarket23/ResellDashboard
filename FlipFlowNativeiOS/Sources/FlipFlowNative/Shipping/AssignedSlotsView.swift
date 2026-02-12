@@ -13,6 +13,8 @@ struct AssignedSlotItem: Identifiable {
   /// When set, this SKU was used to fulfill a sale (order marked as shipped).
   let soldAt: String?
   let fulfilledOrderNumber: String?
+  /// Formatted purchase price (e.g. "$45.00") for SKU label.
+  let purchasePriceDisplay: String?
 }
 
 /// Lists all SKUs/slots assigned in the app (purchases with pickLocation). Swipe to delete clears the slot in Firebase.
@@ -222,7 +224,8 @@ struct AssignedSlotsView: View {
         productSize: item.size,
         styleId: item.styleId,
         productImage: img,
-        isTest: false
+        isTest: false,
+        purchasePrice: item.purchasePriceDisplay
       )
       await MainActor.run {
         bannerMessage = "Opening print…"
@@ -298,7 +301,8 @@ struct AssignedSlotsView: View {
           productImageUrl: $0.productImageUrl,
           styleId: $0.styleId,
           soldAt: $0.soldAt,
-          fulfilledOrderNumber: $0.fulfilledOrderNumber
+          fulfilledOrderNumber: $0.fulfilledOrderNumber,
+          purchasePriceDisplay: $0.purchasePriceDisplay
         )
       } ?? []
     } catch {
@@ -429,4 +433,5 @@ private struct AssignedSlotRowDTO: Decodable {
   let styleId: String?
   let soldAt: String?
   let fulfilledOrderNumber: String?
+  let purchasePriceDisplay: String?
 }

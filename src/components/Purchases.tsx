@@ -1129,7 +1129,7 @@ const Purchases = () => {
     console.log(`📊 Purchase counts: Total=${allPurchases.length}, Valid=${validPurchases.length}, Unique=${uniquePurchases.length}, Filtered=${uniquePurchases.length}`);
     
     return sortPurchases(uniquePurchases, sortBy, sortDirection);
-  }, [purchases, manualPurchases, sortBy, sortDirection, searchQuery, activeFilters]);
+  }, [purchases, manualPurchases, sortBy, sortDirection, searchQuery, activeFilters, presetNeedsTracking, presetInvalidTracking]);
 
   // Paginate the sorted purchases
   const paginatedPurchases = useMemo(() => {
@@ -1149,10 +1149,10 @@ const Purchases = () => {
     return Math.ceil(sortedPurchases.length / itemsPerPage);
   }, [sortedPurchases.length, itemsPerPage]);
 
-  // Reset to page 1 when search query, items per page, or filters change
+  // Reset to page 1 when search query, items per page, filters, or preset buttons change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, itemsPerPage, activeFilters]);
+  }, [searchQuery, itemsPerPage, activeFilters, presetNeedsTracking, presetInvalidTracking]);
 
   // Keep getSortedPurchases for backward compatibility with existing code
   const getSortedPurchases = useCallback(() => sortedPurchases, [sortedPurchases]);

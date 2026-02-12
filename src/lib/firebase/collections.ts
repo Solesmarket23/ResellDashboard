@@ -21,4 +21,7 @@ export const COLLECTIONS = {
 
   // Pick locations: SKU/styleId → location (bin/shelf) for fulfillment
   INVENTORY_LOCATIONS: 'inventoryLocations',
+
+  // Manual tracking entries added via Deliveries "Add Tracking" (persisted so they survive refresh)
+  MANUAL_DELIVERIES: 'manualDeliveries',
 } as const;

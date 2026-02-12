@@ -418,7 +418,8 @@ private struct ReceivingScreen: View {
                   productSize: "M",
                   styleId: nil,
                   productImage: nil,
-                  isTest: true
+                  isTest: true,
+                  purchasePrice: "$89.00"
                 )
                 LabelPrinting.presentPrintSheet(pdfData: pdf, jobName: "FlipFlow SKU TEST1") { _, _ in
                   Task { @MainActor in
@@ -950,7 +951,8 @@ private struct ReceivingScreen: View {
                   productSize: selected.productSize,
                   styleId: selected.styleId,
                   productImage: img,
-                  isTest: !vm.syncEnabled && (selected.sku == nil)
+                  isTest: !vm.syncEnabled && (selected.sku == nil),
+                  purchasePrice: selected.priceDisplay
                 )
                 vm.banner = "Opening print dialog…"
                 LabelPrinting.presentPrintSheet(

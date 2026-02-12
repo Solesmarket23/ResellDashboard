@@ -52,7 +52,42 @@ export async function GET(request: NextRequest) {
       styleId: string | null;
       soldAt: string | null;
       fulfilledOrderNumber: string | null;
+      purchasePriceDisplay: string | null;
     }> = [];
+
+    function parseMoney(val: unknown): number | null {
+      if (val == null) return null;
+      if (typeof val === 'number' && Number.isFinite(val)) return val;
+      if (typeof val === 'string') {
+        const n = parseFloat(val.replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(n) ? n : null;
+      }
+      return null;
+    }
+    function pickGrossAmount(data: Record<string, unknown>): number | null {
+      const keys = ['totalAmount', 'totalPayment', 'purchasePrice', 'price', 'originalPrice'];
+      for (const k of keys) {
+        const n = parseMoney(data[k]);
+        if (n != null && n > 0) return n;
+      }
+      return null;
+    }
+    function pickCredits(data: Record<string, unknown>): number {
+      const raw = data['credits'] ?? data['discounts'] ?? 0;
+      const n = parseMoney(raw);
+      return n != null && n > 0 ? n : 0;
+    }
+    function computeNetPaid(data: Record<string, unknown>): number | null {
+      const net = parseMoney(data['netPaid']);
+      if (net != null && net >= 0) return net;
+      const gross = pickGrossAmount(data);
+      if (gross == null) return null;
+      return Math.max(0, gross - pickCredits(data));
+    }
+    function formatUsd(n: number | null): string | null {
+      if (n == null || !Number.isFinite(n)) return null;
+      return `$${n.toFixed(2)}`;
+    }
 
     for (const doc of snap.docs) {
       const data = doc.data() as any;
@@ -93,6 +128,7 @@ export async function GET(request: NextRequest) {
         typeof data?.fulfilledOrderNumber === 'string' && data.fulfilledOrderNumber.trim() !== ''
           ? data.fulfilledOrderNumber.trim()
           : null;
+      const purchasePriceDisplay = formatUsd(computeNetPaid(data as Record<string, unknown>));
       items.push({
         id: doc.id,
         orderNumber: data?.orderNumber ?? data?.order_number ?? null,
@@ -104,6 +140,7 @@ export async function GET(request: NextRequest) {
         styleId: styleId?.trim() || null,
         soldAt: soldAt ?? null,
         fulfilledOrderNumber: fulfilledOrderNumber ?? null,
+        purchasePriceDisplay: purchasePriceDisplay ?? null,
       });
     }
 
