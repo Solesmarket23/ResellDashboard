@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { cookies } from 'next/headers';
-import { getDocuments, updateDocument } from '../../../../lib/firebase/firebaseUtils';
+import { getDocumentsServer, updateDocument } from '../../../../lib/firebase/firebaseServerUtils';
 
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json().catch(() => ({}));
+    const userId = typeof body?.userId === 'string' ? body.userId.trim() : null;
+    if (!userId) {
+      return NextResponse.json({ error: 'userId is required in request body' }, { status: 400 });
+    }
+
     const cookieStore = cookies();
     const accessToken = cookieStore.get('gmail_access_token')?.value;
     const refreshToken = cookieStore.get('gmail_refresh_token')?.value;
@@ -31,45 +37,49 @@ export async function POST(request: NextRequest) {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    // Get all existing purchases from Firebase
-    const existingPurchases = await getDocuments('purchases');
-    console.log(`🔍 Found ${existingPurchases.length} existing purchases in Firebase`);
+    // Get this user's purchases from Firebase (server)
+    const existingPurchases = await getDocumentsServer('purchases', {
+      where: [{ field: 'userId', operator: '==', value: userId }]
+    });
+    console.log(`🔍 Found ${existingPurchases.length} existing purchases for user`);
 
     let updatedCount = 0;
     let processedCount = 0;
 
-    // Search for all StockX delivery emails
+    // Search for StockX delivery emails (broad query so we catch "Order Delivered", "🎉 Order Delivered", "Order Delivered:", etc.)
     const deliveryQueries = [
-      'from:noreply@stockx.com subject:"Xpress Ship Order Delivered:"',
-      'from:noreply@stockx.com subject:"Order Delivered:"'
+      'from:noreply@stockx.com subject:"Order Delivered"',
+      'from:noreply@stockx.com subject:"Xpress Ship Order Delivered"',
+      'from:noreply@stockx.com subject:"Xpress Order Delivered"'
     ];
 
-    const deliveryEmails = new Map(); // orderNumber -> delivery email info
+    const normalizeOrderNumber = (val: string | null | undefined) => String(val ?? '').trim();
+    const deliveryEmails = new Map<string, { subject: string; messageId: string; isDeliveryEmail: boolean }>();
 
     for (const query of deliveryQueries) {
       try {
         console.log(`🔍 Searching for delivery emails: ${query}`);
-        
+
         const response = await gmail.users.messages.list({
           userId: 'me',
           q: query,
-          maxResults: 50 // Get up to 50 delivery emails
+          maxResults: 100
         });
 
         if (response.data.messages) {
           console.log(`📧 Found ${response.data.messages.length} delivery emails for query: ${query}`);
-          
+
           for (const message of response.data.messages) {
             const emailData = await gmail.users.messages.get({
               userId: 'me',
               id: message.id,
               format: 'full'
             });
-            
-            // Extract subject and order number
+
             const subject = emailData.data.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
-            const orderNumber = extractOrderNumberFromEmail(emailData.data);
-            
+            const rawOrderNumber = extractOrderNumberFromEmail(emailData.data);
+            const orderNumber = normalizeOrderNumber(rawOrderNumber);
+
             if (orderNumber) {
               deliveryEmails.set(orderNumber, {
                 subject,
@@ -87,12 +97,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`🚚 Found ${deliveryEmails.size} orders with delivery emails`);
 
-    // Update existing purchases that have delivery emails
+    // Update existing purchases that have delivery emails (match by normalized order number)
     for (const purchase of existingPurchases) {
       processedCount++;
-      
-      if (deliveryEmails.has(purchase.orderNumber)) {
-        const deliveryInfo = deliveryEmails.get(purchase.orderNumber);
+      const purchaseOrderNumber = normalizeOrderNumber(purchase.orderNumber ?? purchase.order_number);
+      if (!purchaseOrderNumber) continue;
+      if (deliveryEmails.has(purchaseOrderNumber)) {
+        const deliveryInfo = deliveryEmails.get(purchaseOrderNumber);
         
         // Only update if current status is not already "Delivered"
         if (purchase.status !== 'Delivered') {
@@ -102,6 +113,7 @@ export async function POST(request: NextRequest) {
           try {
             await updateDocument('purchases', purchase.id, {
               status: 'Delivered',
+              shipping_status: 'Delivered',
               statusColor: 'green',
               priority: 4,
               updatedAt: new Date().toISOString(),
@@ -164,7 +176,7 @@ function extractOrderNumberFromEmail(email: any): string | null {
 
     for (const pattern of orderNumberPatterns) {
       const match = bodyContent.match(pattern);
-      if (match) {
+      if (match && match[1]) {
         return match[1].trim();
       }
     }

@@ -66,11 +66,13 @@ export async function POST(request: NextRequest) {
       console.log(`🗑️ Deleted ${existingPurchases.length} old Gmail purchases`);
     }
 
+    const normalizeOrderNumber = (val: string) => String(val ?? '').trim();
     const existingByOrderNumber = new Map<string, { id: string; data: any }>();
     const duplicateDocIdsToDelete: string[] = [];
 
     for (const p of existingPurchases) {
-      const orderNumber = (p as any)?.orderNumber ? String((p as any).orderNumber) : '';
+      const raw = (p as any)?.orderNumber ?? (p as any)?.order_number ?? '';
+      const orderNumber = normalizeOrderNumber(raw);
       if (!orderNumber) continue;
       if (existingByOrderNumber.has(orderNumber)) {
         duplicateDocIdsToDelete.push(String((p as any).id));
@@ -98,7 +100,8 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
 
     for (const purchase of purchases) {
-      const incomingOrderNumber = (purchase as any)?.orderNumber ? String((purchase as any).orderNumber) : '';
+      const rawIncoming = (purchase as any)?.orderNumber ?? (purchase as any)?.order_number ?? '';
+      const incomingOrderNumber = normalizeOrderNumber(rawIncoming);
 
       // Remove the 'id' field if it exists (it might be set to orderNumber by frontend)
       const purchaseData: any = { ...(purchase as any) };

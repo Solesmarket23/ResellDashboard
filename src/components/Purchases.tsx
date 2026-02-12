@@ -244,6 +244,7 @@ const Purchases = () => {
   const [lastAutoStatusUpdate, setLastAutoStatusUpdate] = useState<Date | null>(null);
   const [showFixItemProducts, setShowFixItemProducts] = useState(false);
   const [showMoreActionsDropdown, setShowMoreActionsDropdown] = useState(false);
+  const [fixingDeliveredStatus, setFixingDeliveredStatus] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [editingTracking, setEditingTracking] = useState<string | null>(null); // Track which purchase is being edited (by id or orderNumber)
   const [editingTrackingValue, setEditingTrackingValue] = useState<string>(''); // Current value being edited
@@ -1619,6 +1620,41 @@ const Purchases = () => {
   // Show notification helper
   const showNotification = (message: string, type: NotificationType) => {
     setNotification({ isVisible: true, message, type });
+  };
+
+  const handleFixDeliveredStatus = async () => {
+    if (!user?.uid) {
+      showNotification('Please sign in to fix delivery status', 'error');
+      return;
+    }
+    setFixingDeliveredStatus(true);
+    try {
+      const res = await fetch('/api/gmail/fix-delivery-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ userId: user.uid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showNotification(data?.error || 'Failed to fix delivered status', 'error');
+        return;
+      }
+      const updated = data?.totalUpdated ?? 0;
+      const found = data?.deliveryEmailsFound ?? 0;
+      await loadManualPurchasesFromFirebase();
+      if (updated > 0) {
+        showNotification(`Updated ${updated} order${updated === 1 ? '' : 's'} to Delivered`, 'success');
+      } else if (found > 0) {
+        showNotification('All orders with delivery emails are already marked Delivered', 'success');
+      } else {
+        showNotification('No StockX delivery emails found in Gmail', 'info');
+      }
+    } catch (e: any) {
+      showNotification(e?.message || 'Failed to fix delivered status', 'error');
+    } finally {
+      setFixingDeliveredStatus(false);
+    }
   };
 
   const pickTracking = (p: any): string => {
@@ -3903,6 +3939,24 @@ const Purchases = () => {
             >
               <RefreshCw className="w-5 h-5" />
               <span>Sync Gmail</span>
+            </button>
+
+            <button
+              onClick={() => void handleFixDeliveredStatus()}
+              disabled={!gmailConnected || fixingDeliveredStatus}
+              className={`flex items-center space-x-2 ${
+                currentTheme.name === 'Neon'
+                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              } disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg font-medium transition-all duration-200`}
+              title={
+                !gmailConnected
+                  ? 'Connect Gmail first'
+                  : 'Find StockX "Order Delivered" emails and set those orders to Delivered'
+              }
+            >
+              <RefreshCw className={`w-5 h-5 ${fixingDeliveredStatus ? 'animate-spin' : ''}`} />
+              <span>{fixingDeliveredStatus ? 'Checking…' : 'Fix delivered status'}</span>
             </button>
 
             {/* Mock Data Toggle (for demos / UI testing) */}
