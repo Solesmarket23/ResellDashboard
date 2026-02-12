@@ -69,9 +69,23 @@ function pickCreditsAmount(data: any): number {
 }
 
 function pickGrossAmount(data: any): number | null {
-  const candidates = [data?.totalAmount, data?.totalPayment, data?.purchasePrice, data?.netPaid, data?.price, data?.originalPrice];
+  const candidates = [
+    data?.totalAmount,
+    data?.totalPayment,
+    data?.purchasePrice,
+    data?.netPaid,
+    data?.price,
+    data?.originalPrice,
+    data?.total_amount,
+    data?.orderTotal,
+  ];
   for (const c of candidates) {
     const n = parseMoney(c);
+    if (n && n > 0) return n;
+  }
+  const product = data?.product && typeof data.product === 'object' ? data.product : null;
+  if (product) {
+    const n = parseMoney(product.price ?? product.purchasePrice ?? product.totalAmount);
     if (n && n > 0) return n;
   }
   return null;
@@ -157,6 +171,7 @@ export async function GET(request: NextRequest) {
         const gross = pickGrossAmount(data);
         const credits = pickCreditsAmount(data);
         const netPaid = computeNetPaid(data);
+        const priceDisplay = formatUsd(netPaid);
         return {
           id: doc.id,
           userId: data?.userId || data?.uid || null,
@@ -169,11 +184,13 @@ export async function GET(request: NextRequest) {
           received: !!data?.received,
           receivedAt: data?.receivedAt || null,
           pickLocation: (data?.pickLocation ?? data?.pick_location ?? '').toString().trim() || null,
+          netPaid: netPaid ?? undefined,
+          priceDisplay: priceDisplay ?? undefined,
           pricing: {
             gross,
             credits,
             netPaid,
-            display: formatUsd(netPaid),
+            display: priceDisplay,
           },
           authSelf: data?.authSelf || data?.auth?.self || null,
           authExternal: data?.authExternal || data?.auth?.external || null,

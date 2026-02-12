@@ -48,6 +48,8 @@ interface UseRealTimeDeliveriesReturn {
   error: string | null;
   lastSync: Date | null;
   refresh: () => Promise<void>;
+  /** Quick refresh (no live tracking) so the list updates immediately after adding tracking. */
+  refreshLite: () => Promise<void>;
   stats: {
     total: number;
     liveTracking: number;
@@ -196,6 +198,50 @@ export function useRealTimeDeliveries({
     }
   }, [userId]);
 
+  const refreshLite = useCallback(async () => {
+    if (!userId) return;
+    setError(null);
+    try {
+      const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
+      const shouldUseLocalStoragePurchases = !!(siteUserId && siteUserId === userId);
+      const url = `/api/deliveries/sync?userId=${encodeURIComponent(userId)}&includeArchived=1&includeLiveTracking=0`;
+
+      if (shouldUseLocalStoragePurchases && typeof window !== 'undefined') {
+        const storageKey = `purchases_${siteUserId}`;
+        const purchasesJson = localStorage.getItem(storageKey);
+        if (purchasesJson) {
+          const purchases = JSON.parse(purchasesJson);
+          const res = await fetch(`/api/deliveries/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId,
+              purchases,
+              fromLocalStorage: true,
+              includeLiveTracking: false,
+              includeArchived: true
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            setDeliveries(data.deliveries);
+            setLastSync(new Date(data.lastSync));
+          }
+          return;
+        }
+      }
+
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        setDeliveries(data.deliveries);
+        setLastSync(new Date(data.lastSync));
+      }
+    } catch (err) {
+      console.error('Refresh lite failed:', err);
+    }
+  }, [userId]);
+
   // Initial fetch
   useEffect(() => {
     fetchDeliveries();
@@ -226,6 +272,7 @@ export function useRealTimeDeliveries({
     error,
     lastSync,
     refresh: fetchDeliveries,
+    refreshLite,
     stats
   };
 }

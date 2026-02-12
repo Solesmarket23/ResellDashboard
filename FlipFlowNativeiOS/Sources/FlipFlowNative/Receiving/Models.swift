@@ -80,7 +80,9 @@ struct PurchaseMatch: Identifiable, Hashable {
       Self.pickNestedString(data, path: ["product", "imageUrl"]) ??
       Self.pickNestedString(data, path: ["product", "image"])
 
-    self.priceDisplay = Self.formatUsd(Self.computeNetPaid(data: data))
+    self.priceDisplay = Self.pickString(data, keys: ["priceDisplay"])
+      ?? (data["pricing"] as? [String: Any]).flatMap { Self.pickString($0, keys: ["display"]) }
+      ?? Self.formatUsd(Self.computeNetPaid(data: data))
   }
 
   private static func pickString(_ data: [String: Any], keys: [String]) -> String? {

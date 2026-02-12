@@ -124,7 +124,8 @@ const DeliveriesNew: React.FC = () => {
     loading,
     hydrating,
     error,
-    refresh: refreshDeliveries
+    refresh: refreshDeliveries,
+    refreshLite
   } = useRealTimeDeliveries({
     userId: user?.uid || '',
     autoRefresh: true,
@@ -1353,13 +1354,16 @@ const DeliveriesNew: React.FC = () => {
       setNewTracking({ purchaseId: '', trackingNumber: '', carrier: 'AUTO', productName: '', productBrand: '', productSize: '' });
       if (savedOk) showNotification(successMessage, 'success');
 
-      // Refresh is best-effort; don't override a successful save with an error toast.
+      // Update list immediately so the new tracking appears right after Enter/save (no wait for full live-tracking fetch).
       try {
-        await refreshDeliveries();
+        await refreshLite();
       } catch (err) {
-        console.error('Refresh after saving tracking failed:', err);
-        showNotification('Saved, but refresh failed — click Refresh', 'info');
+        console.error('Quick refresh after save failed:', err);
       }
+      // Then hydrate live tracking in the background (best-effort).
+      refreshDeliveries().catch((err) => {
+        console.error('Full refresh after save failed:', err);
+      });
     } catch (e) {
       console.error(e);
       showNotification((e as any)?.message || 'Failed to save tracking', 'error');

@@ -65,9 +65,14 @@ export async function GET(request: NextRequest) {
       return null;
     }
     function pickGrossAmount(data: Record<string, unknown>): number | null {
-      const keys = ['totalAmount', 'totalPayment', 'purchasePrice', 'price', 'originalPrice'];
-      for (const k of keys) {
+      const topKeys = ['totalAmount', 'totalPayment', 'purchasePrice', 'price', 'originalPrice', 'total_amount', 'orderTotal'];
+      for (const k of topKeys) {
         const n = parseMoney(data[k]);
+        if (n != null && n > 0) return n;
+      }
+      const product = data['product'] as Record<string, unknown> | undefined;
+      if (product && typeof product === 'object') {
+        const n = parseMoney(product['price'] ?? product['purchasePrice'] ?? product['totalAmount']);
         if (n != null && n > 0) return n;
       }
       return null;
