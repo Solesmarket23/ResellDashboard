@@ -1623,7 +1623,9 @@ const Purchases = () => {
   };
 
   const handleFixDeliveredStatus = async () => {
-    if (!user?.uid) {
+    const siteUserId = typeof window !== 'undefined' ? localStorage.getItem('siteUserId') : null;
+    const effectiveUserId = user?.uid || siteUserId?.trim() || null;
+    if (!effectiveUserId) {
       showNotification('Please sign in to fix delivery status', 'error');
       return;
     }
@@ -1633,7 +1635,7 @@ const Purchases = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ userId: user.uid }),
+        body: JSON.stringify({ userId: effectiveUserId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
