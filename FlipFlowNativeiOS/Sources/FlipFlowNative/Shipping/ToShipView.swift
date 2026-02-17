@@ -344,10 +344,10 @@ struct ToShipView: View {
       HStack(spacing: 12) {
         summaryCard(title: "Total pending", value: "\(pendingOrders.count)", icon: "shippingbox")
         summaryCard(title: "Shipped today", value: "\(shippedTodayCount ?? 0)", icon: "checkmark.circle")
-        summaryCard(title: "Ship today", value: "\(shipTodayCount())", icon: "calendar", subtitle: "EST")
-        summaryCard(title: "Ship tomorrow", value: "\(shipTomorrowCount())", icon: "calendar.badge.clock", subtitle: "EST")
+        summaryCard(title: "Ship today", value: "\(shipTodayCount())", icon: "calendar")
+        summaryCard(title: "Ship tomorrow", value: "\(shipTomorrowCount())", icon: "calendar.badge.clock")
         summaryCard(title: "Expected payout", value: formatPayout(totalExpectedPayout), icon: "dollarsign.circle")
-        summaryCard(title: "Today's profit", value: formatTodayProfit(todayProfit), icon: "banknote", subtitle: "shipped today")
+        summaryCard(title: "Today's profit", value: formatTodayProfit(todayProfit), icon: "banknote")
       }
       .padding(.horizontal, 16)
     }

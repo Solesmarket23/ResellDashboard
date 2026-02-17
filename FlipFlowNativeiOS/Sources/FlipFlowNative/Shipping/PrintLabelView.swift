@@ -3,6 +3,11 @@ import SwiftUI
 /// Enter order number (or paste shippingDocumentUrl), fetch shipping document list then PDF(s), print via Air Print.
 /// StockX can return multiple documents (shipping label + invoice/insert); we fetch and print each.
 /// If input is a StockX shippingDocumentUrl we skip the list call and request that PDF directly.
+///
+/// StockX printing defaults (keep until Alias printing is added):
+/// - Page 1 (shipping label): rotate 90° clockwise
+/// - Page 2 (insert): no rotation
+/// - Printer paper size: 104.4 mm × 159.4 mm
 struct PrintLabelView: View {
   @EnvironmentObject private var auth: AuthViewModel
   let userId: String
@@ -11,15 +16,10 @@ struct PrintLabelView: View {
   @State private var orderNumber = ""
   @State private var isPrinting = false
   @State private var useThermalLabel = true
-  enum RotateOption: String, CaseIterable {
-    case none = "None"
-    case clockwise = "90° clockwise"
-    case counterClockwise = "90° counter-clockwise"
-  }
-  @State private var rotateOption: RotateOption = .clockwise
   @State private var bannerMessage: String?
   @State private var alertMessage: String?
   @State private var showAlert = false
+  @State private var isSharing = false
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
 
@@ -56,23 +56,6 @@ struct PrintLabelView: View {
         .tint(NeonTheme.accentCyan)
         .padding(.horizontal, 16)
 
-        VStack(alignment: .leading, spacing: 6) {
-          Text("Rotate for 4×6 label")
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(NeonTheme.textSecondary)
-          Text("If the label prints with 4\" on the 6\" side (and is cut off), use 90° clockwise.")
-            .font(.caption)
-            .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
-          Picker("", selection: $rotateOption) {
-            ForEach(RotateOption.allCases, id: \.self) { opt in
-              Text(opt.rawValue).tag(opt)
-            }
-          }
-          .pickerStyle(.menu)
-          .tint(NeonTheme.accentCyan)
-        }
-        .padding(.horizontal, 16)
-
         Button {
           Task { await fetchAndPrint() }
         } label: {
@@ -89,9 +72,42 @@ struct PrintLabelView: View {
           .fontWeight(.semibold)
           .foregroundStyle(.white)
         }
-        .disabled(isPrinting || orderNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(isPrinting || isSharing || orderNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .buttonStyle(NeonPrimaryButtonStyle())
         .padding(.horizontal, 16)
+
+        Button {
+          Task { await fetchAndShare() }
+        } label: {
+          HStack {
+            if isSharing {
+              ProgressView()
+                .tint(NeonTheme.accentCyan)
+              Text("Preparing…")
+            } else {
+              Image(systemName: "square.and.arrow.up")
+              Text("Share label (print on Mac)")
+            }
+          }
+          .fontWeight(.semibold)
+          .foregroundStyle(NeonTheme.accentCyan)
+        }
+        .disabled(isPrinting || isSharing || orderNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .buttonStyle(.bordered)
+        .tint(NeonTheme.accentCyan)
+        .padding(.horizontal, 16)
+
+        Text("Tip: Make sure printer paper size is 104.4 mm × 159.4 mm.")
+          .font(.caption)
+          .foregroundStyle(NeonTheme.textSecondary)
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 24)
+
+        Text("AirDrop or save to Files, then open on your Mac and print.")
+          .font(.caption2)
+          .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 24)
 
         Spacer()
       }
@@ -198,9 +214,9 @@ struct PrintLabelView: View {
       }
     }
 
-    // 2) Fetch each PDF and print (label first, then insert if present)
+    // 2) Fetch each PDF, apply StockX defaults, render to images (auto 4×6 vs 6×4), then print all in one job.
     let pdfBase = baseURL.appendingPathComponent("api/stockx/shipping-document/pdf")
-    let labels = documentIds.count == 1 ? ["Label"] : ["Label", "Insert"]
+    var images: [UIImage] = []
     for (index, docId) in documentIds.enumerated() {
       var pdfComps = URLComponents(url: pdfBase, resolvingAgainstBaseURL: false)!
       pdfComps.queryItems = [
@@ -235,36 +251,176 @@ struct PrintLabelView: View {
         return
       }
 
-      let jobName = documentIds.count > 1
-        ? "StockX \(order) – \(labels[index])"
-        : "StockX \(order)"
-      let isLast = index == documentIds.count - 1
-      await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        Task { @MainActor in
-          let rotate90Clockwise: Bool? = switch rotateOption {
-            case .none: nil
-            case .clockwise: true
-            case .counterClockwise: false
-          }
-          LabelPrinting.presentPrintSheet(
-            pdfData: pdfData,
-            jobName: jobName,
-            orientation: .portrait,
-            rotate90Clockwise: rotate90Clockwise
-          ) { completed, error in
-            Task { @MainActor in
-              if let error {
-                bannerMessage = "Print failed: \(error.localizedDescription)"
-              } else if completed {
-                bannerMessage = !isLast
-                  ? "Printed \(labels[index]). Next: \(labels[index + 1])."
-                  : "Sent to printer."
-              } else {
-                bannerMessage = "Print canceled."
-              }
-              cont.resume()
+      // StockX defaults:
+      // - shipping label (page 1): rotate 90° clockwise
+      // - insert (page 2): no rotation
+      var dataToRender = pdfData
+      if index == 0, let rotated = LabelPrinting.rotatePDF90(pdfData, clockwise: true) {
+        dataToRender = rotated
+      }
+      dataToRender = LabelPrinting.pdfDataSinglePage(dataToRender)
+
+      // Auto-size render target based on the post-rotation PDF orientation to avoid stretching.
+      let bounds = LabelPrinting.firstPageBounds(dataToRender)
+      let isLandscape = (bounds?.width ?? 0) >= (bounds?.height ?? 1)
+      let sizeForPage = isLandscape ? LabelPrinting.shippingLabel6x4Points : LabelPrinting.shippingLabel4x6Points
+      guard let image = LabelPrinting.image(fromPdf: dataToRender, sizeInPoints: sizeForPage) else {
+        await MainActor.run {
+          bannerMessage = "Could not render label image."
+        }
+        return
+      }
+      images.append(image)
+    }
+
+    guard !images.isEmpty else { return }
+
+    let jobName = documentIds.count > 1 ? "StockX \(order) (Label + Insert)" : "StockX \(order)"
+    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+      Task { @MainActor in
+        LabelPrinting.presentPrintSheetAsPhoto(
+          images: images,
+          jobName: jobName,
+          preferredPaperSize: LabelPrinting.shippingLabel4x6Points
+        ) { completed, error in
+          Task { @MainActor in
+            if let error {
+              bannerMessage = "Print failed: \(error.localizedDescription)"
+            } else if completed {
+              bannerMessage = "Sent to printer."
+            } else {
+              bannerMessage = "Print canceled."
             }
+            cont.resume()
           }
+        }
+      }
+    }
+  }
+
+  /// Fetches the shipping label PDF and presents the share sheet so you can AirDrop to Mac and print with 4×6.
+  private func fetchAndShare() async {
+    let raw = orderNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !raw.isEmpty,
+          let bearer = try? await auth.getApiBearerToken(forcingRefresh: false),
+          !bearer.isEmpty
+    else {
+      bannerMessage = "Enter order number and ensure you're signed in."
+      return
+    }
+
+    isSharing = true
+    bannerMessage = nil
+    defer { Task { @MainActor in isSharing = false } }
+
+    let (order, shippingIdFromUrl) = parseOrderNumberOrShippingDocumentUrl(raw)
+    if shippingIdFromUrl != nil {
+      await MainActor.run { orderNumber = order }
+    }
+
+    var documentIds: [String]
+    if let fromUrl = shippingIdFromUrl {
+      documentIds = [fromUrl]
+    } else {
+      var listURL = baseURL.appendingPathComponent("api/stockx/shipping-document")
+      var comps = URLComponents(url: listURL, resolvingAgainstBaseURL: false)!
+      comps.queryItems = [URLQueryItem(name: "orderNumber", value: order)]
+      guard let listReqURL = comps.url else {
+        await MainActor.run { bannerMessage = "Invalid URL." }
+        return
+      }
+      var listReq = URLRequest(url: listReqURL)
+      listReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+      listReq.setValue("application/json", forHTTPHeaderField: "Accept")
+
+      do {
+        let (listData, listResp) = try await URLSession.shared.data(for: listReq)
+        let listStatus = (listResp as? HTTPURLResponse)?.statusCode ?? 0
+        if listStatus != 200 {
+          let decoded = try? JSONDecoder().decode(ShippingErrorResponse.self, from: listData)
+          let userMsg = decoded?.error ?? "No shipping label available for this order."
+          await MainActor.run {
+            alertMessage = userMsg
+            showAlert = true
+          }
+          return
+        }
+        guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any] else {
+          await MainActor.run {
+            alertMessage = "No shipping label available for this order."
+            showAlert = true
+          }
+          return
+        }
+        let thermalIds = listJson["thermalDocumentIds"] as? [String]
+        let normalIds = listJson["normalDocumentIds"] as? [String]
+        if useThermalLabel, let ids = thermalIds, !ids.isEmpty {
+          documentIds = ids
+        } else if !useThermalLabel, let ids = normalIds, !ids.isEmpty {
+          documentIds = ids
+        } else if let ids = listJson["shippingDocumentIds"] as? [String], !ids.isEmpty {
+          documentIds = ids
+        } else if let sid = (listJson["shippingId"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) ?? extractFirstShippingId(from: listJson) {
+          documentIds = [sid]
+        } else {
+          await MainActor.run {
+            alertMessage = "No shipping label available for this order."
+            showAlert = true
+          }
+          return
+        }
+      } catch {
+        await MainActor.run { bannerMessage = "Network error: \(error.localizedDescription)" }
+        return
+      }
+    }
+
+    let pdfBase = baseURL.appendingPathComponent("api/stockx/shipping-document/pdf")
+    let docId = documentIds[0]
+    var pdfComps = URLComponents(url: pdfBase, resolvingAgainstBaseURL: false)!
+    pdfComps.queryItems = [
+      URLQueryItem(name: "orderNumber", value: order),
+      URLQueryItem(name: "shippingId", value: docId),
+    ]
+    guard let pdfURL = pdfComps.url else {
+      await MainActor.run { bannerMessage = "Invalid PDF URL." }
+      return
+    }
+    var pdfReq = URLRequest(url: pdfURL)
+    pdfReq.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    pdfReq.setValue("application/pdf", forHTTPHeaderField: "Accept")
+
+    let (pdfData, pdfResp): (Data, URLResponse)
+    do {
+      (pdfData, pdfResp) = try await URLSession.shared.data(for: pdfReq)
+    } catch {
+      await MainActor.run { bannerMessage = "Network error: \(error.localizedDescription)" }
+      return
+    }
+
+    let pdfStatus = (pdfResp as? HTTPURLResponse)?.statusCode ?? 0
+    let contentType = (pdfResp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+    if pdfStatus != 200 || !contentType.contains("pdf") {
+      let decoded = try? JSONDecoder().decode(ShippingErrorResponse.self, from: pdfData)
+      let userMsg = decoded?.error ?? "No shipping label available for this order."
+      await MainActor.run {
+        alertMessage = userMsg
+        showAlert = true
+      }
+      return
+    }
+
+    let safeOrder = order.replacingOccurrences(of: "/", with: "-")
+    let filename = "StockX-\(safeOrder)-label.pdf"
+    await MainActor.run {
+      LabelPrinting.presentShareSheet(
+        pdfData: pdfData,
+        filename: filename,
+        // StockX default for sharing/printing on Mac: rotate 90° clockwise.
+        rotate90Clockwise: true
+      ) {
+        Task { @MainActor in
+          bannerMessage = "Share sheet closed. Open the PDF on your Mac and print with 4×6."
         }
       }
     }

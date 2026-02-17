@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 import PDFKit
 
-/// Retained as print controller delegate so we can auto-pick paper size (e.g. 1.2" x 2.2") for SKU labels.
+/// Retained as print controller delegate so we can auto-pick paper size (e.g. 4×6 for shipping, 1.2"×2.2" for SKU).
 private final class LabelPrintDelegate: NSObject, UIPrintInteractionControllerDelegate {
   let desiredSize: CGSize
 
@@ -18,6 +18,22 @@ private final class LabelPrintDelegate: NSObject, UIPrintInteractionControllerDe
     guard let first = paperList.first else {
       fatalError("UIPrintInteractionController choosePaper called with empty paper list")
     }
+    // When we want 4×6, explicitly pick a paper that matches 4×6" (either orientation) so we don't get 2.2×1.2.
+    let fourBySixW = 4 * 72 as CGFloat
+    let fourBySixH = 6 * 72 as CGFloat
+    let tolerance: CGFloat = 18 // ~0.25"
+    if desiredSize.width >= fourBySixW - tolerance, desiredSize.height >= fourBySixH - tolerance {
+      for paper in paperList {
+        let r = paper.paperSize
+        let w = r.width
+        let h = r.height
+        let is4x6Portrait = abs(w - fourBySixW) <= tolerance && abs(h - fourBySixH) <= tolerance
+        let is4x6Landscape = abs(w - fourBySixH) <= tolerance && abs(h - fourBySixW) <= tolerance
+        if is4x6Portrait || is4x6Landscape {
+          return paper
+        }
+      }
+    }
     return UIPrintPaper.bestPaper(forPageSize: desiredSize, withPapersFrom: paperList) ?? first
   }
 }
@@ -26,6 +42,10 @@ enum LabelPrinting {
   // 1 inch = 72 points in PDF space.
   // User label: 1.25" x 2.25" (commonly 2.25w x 1.25h in landscape).
   static let labelSizePoints = CGSize(width: 2.25 * 72.0, height: 1.25 * 72.0)
+  /// 4×6" shipping label; use with print-as-photo so AirPrint defaults to 4×6.
+  static let shippingLabel4x6Points = CGSize(width: 4 * 72, height: 6 * 72)
+  /// 6×4" (landscape) for insert so it uses 6" for width; same paper, different orientation.
+  static let shippingLabel6x4Points = CGSize(width: 6 * 72, height: 4 * 72)
 
   private static var printDelegate: LabelPrintDelegate?
 
@@ -238,6 +258,70 @@ enum LabelPrinting {
     return onePage.dataRepresentation() ?? data
   }
 
+  /// Returns the mediaBox bounds for the first page (single-page safe).
+  static func firstPageBounds(_ pdfData: Data) -> CGRect? {
+    let onePage = pdfDataSinglePage(pdfData)
+    guard let doc = PDFDocument(data: onePage), doc.pageCount > 0, let page = doc.page(at: 0) else { return nil }
+    return page.bounds(for: .mediaBox)
+  }
+
+  /// Renders the first page of the PDF to an image at the given size (in points). Use for print-as-photo so AirPrint can default to 4×6.
+  /// Pass pre-rotated PDF data if you need rotation.
+  static func image(fromPdf pdfData: Data, sizeInPoints: CGSize, scale: CGFloat = 2) -> UIImage? {
+    let onePage = pdfDataSinglePage(pdfData)
+    guard let doc = PDFDocument(data: onePage), doc.pageCount > 0, let page = doc.page(at: 0) else { return nil }
+    let pageBounds = page.bounds(for: .mediaBox)
+    guard pageBounds.width > 0, pageBounds.height > 0 else { return nil }
+    let imageSize = CGSize(width: sizeInPoints.width * scale, height: sizeInPoints.height * scale)
+    let renderer = UIGraphicsImageRenderer(size: imageSize)
+    let image = renderer.image { ctx in
+      let cg = ctx.cgContext
+      cg.saveGState()
+      cg.translateBy(x: 0, y: imageSize.height)
+      cg.scaleBy(x: 1, y: -1)
+      cg.scaleBy(x: imageSize.width / pageBounds.width, y: imageSize.height / pageBounds.height)
+      page.draw(with: .mediaBox, to: cg)
+      cg.restoreGState()
+    }
+    return image
+  }
+
+  /// Print one or more images as "photo" so AirPrint tends to default to 4×6. preferredPaperSize is used by the delegate to pick paper.
+  @MainActor
+  static func presentPrintSheetAsPhoto(
+    images: [UIImage],
+    jobName: String,
+    preferredPaperSize: CGSize = LabelPrinting.shippingLabel4x6Points,
+    onComplete: ((Bool, Error?) -> Void)? = nil
+  ) {
+    guard !images.isEmpty else {
+      onComplete?(false, nil)
+      return
+    }
+    let controller = UIPrintInteractionController.shared
+    controller.printingItem = nil
+    if images.count == 1 {
+      controller.printingItem = images[0]
+    } else {
+      controller.printingItems = images
+    }
+    controller.showsNumberOfCopies = false
+    controller.printInfo = {
+      let info = UIPrintInfo(dictionary: nil)
+      info.outputType = .photo
+      info.jobName = jobName
+      info.orientation = .portrait
+      return info
+    }()
+    let delegate = LabelPrintDelegate(desiredSize: preferredPaperSize)
+    Self.printDelegate = delegate
+    controller.delegate = delegate
+    controller.present(animated: true) { _, completed, error in
+      Self.printDelegate = nil
+      onComplete?(completed, error)
+    }
+  }
+
   /// rotate90Clockwise: nil = no rotation, true = 90° CW, false = 90° CCW
   @MainActor
   static func presentPrintSheet(
@@ -273,6 +357,66 @@ enum LabelPrinting {
       Self.printDelegate = nil
       onComplete?(completed, error)
     }
+  }
+
+  /// Share PDF (e.g. for AirDrop to Mac to print with 4×6). Optionally rotates for label orientation.
+  @MainActor
+  static func presentShareSheet(
+    pdfData: Data,
+    filename: String,
+    rotate90Clockwise: Bool? = nil,
+    onComplete: (() -> Void)? = nil
+  ) {
+    var dataToShare: Data
+    if let cw = rotate90Clockwise, let rotated = rotatePDF90(pdfData, clockwise: cw) {
+      dataToShare = rotated
+    } else {
+      dataToShare = pdfData
+    }
+    dataToShare = pdfDataSinglePage(dataToShare)
+
+    let ext = (filename as NSString).pathExtension.lowercased()
+    let name = (ext == "pdf") ? filename : "\(filename).pdf"
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    do {
+      try dataToShare.write(to: tmp)
+    } catch {
+      onComplete?()
+      return
+    }
+
+    guard let vc = Self.topViewController else {
+      try? FileManager.default.removeItem(at: tmp)
+      onComplete?()
+      return
+    }
+
+    let activity = UIActivityViewController(activityItems: [tmp], applicationActivities: nil)
+    activity.completionWithItemsHandler = { _, _, _, _ in
+      try? FileManager.default.removeItem(at: tmp)
+      DispatchQueue.main.async { onComplete?() }
+    }
+    if let popover = activity.popoverPresentationController {
+      popover.sourceView = vc.view
+      popover.sourceRect = CGRect(x: vc.view.bounds.midX, y: vc.view.bounds.midY, width: 0, height: 0)
+      popover.permittedArrowDirections = []
+    }
+    vc.present(activity, animated: true)
+  }
+
+  private static var topViewController: UIViewController? {
+    guard let windowScene = UIApplication.shared.connectedScenes
+      .compactMap({ $0 as? UIWindowScene })
+      .first(where: { $0.activationState == .foregroundActive }),
+          let window = windowScene.windows.first(where: { $0.isKeyWindow }),
+          let root = window.rootViewController
+    else { return nil }
+    var top = root
+    while let presented = top.presentedViewController { top = presented }
+    while let child = (top as? UINavigationController)?.topViewController ?? (top as? UITabBarController)?.selectedViewController {
+      top = child
+    }
+    return top
   }
 
   static func loadProductImage(urlString: String?) async -> UIImage? {
