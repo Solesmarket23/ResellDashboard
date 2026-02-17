@@ -39,6 +39,8 @@ struct ToShipView: View {
   @State private var lastReadyToShipFetchTime: Date?
   /// Profit (payout - cost) for orders marked as shipped today.
   @State private var todayProfit: Double?
+  /// Number of orders marked as shipped today (from today-profit API).
+  @State private var shippedTodayCount: Int?
   @State private var isMarkingOrderNumber: String?
 
   private let baseURL = URL(string: "https://www.solesmarket.com")!
@@ -341,6 +343,7 @@ struct ToShipView: View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 12) {
         summaryCard(title: "Total pending", value: "\(pendingOrders.count)", icon: "shippingbox")
+        summaryCard(title: "Shipped today", value: "\(shippedTodayCount ?? 0)", icon: "checkmark.circle")
         summaryCard(title: "Ship today", value: "\(shipTodayCount())", icon: "calendar", subtitle: "EST")
         summaryCard(title: "Ship tomorrow", value: "\(shipTomorrowCount())", icon: "calendar.badge.clock", subtitle: "EST")
         summaryCard(title: "Expected payout", value: formatPayout(totalExpectedPayout), icon: "dollarsign.circle")
@@ -471,8 +474,13 @@ struct ToShipView: View {
           .font(.system(size: 16))
           .foregroundStyle(NeonTheme.accentCyan.opacity(0.9))
         Text(value)
-          .font(.title2.weight(.bold))
+          .font(.system(.title2, design: .rounded).weight(.bold))
+          .monospacedDigit()
           .foregroundStyle(NeonTheme.textPrimary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+          .frame(height: 28)
+          .frame(maxWidth: .infinity)
         Text(title)
           .font(.caption)
           .foregroundStyle(NeonTheme.textSecondary)
@@ -483,7 +491,7 @@ struct ToShipView: View {
             .foregroundStyle(NeonTheme.textSecondary.opacity(0.8))
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .frame(minWidth: 88, maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
@@ -650,9 +658,15 @@ struct ToShipView: View {
       let (data, res) = try await URLSession.shared.data(for: req)
       guard let http = res as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else { return }
       let decoded = try JSONDecoder().decode(TodayProfitResponse.self, from: data)
-      await MainActor.run { todayProfit = decoded.todayProfit }
+      await MainActor.run {
+        todayProfit = decoded.todayProfit
+        shippedTodayCount = decoded.count
+      }
     } catch {
-      await MainActor.run { todayProfit = nil }
+      await MainActor.run {
+        todayProfit = nil
+        shippedTodayCount = nil
+      }
     }
   }
 
