@@ -50,5 +50,7 @@ next-env.d.ts
 /.tmp/
 devserver.log
 
-# Cursor / IDE artifacts
-.cursor/
+# Cursor / IDE artifacts (plans are committed for team sharing)
+.cursor/*
+!.cursor/plans/
+!.cursor/plans/*
